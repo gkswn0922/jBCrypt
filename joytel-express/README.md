@@ -18,6 +18,10 @@ Run
 ------
 npm run dev
 
+# 주문 스케줄러 실행
+npm run scheduler      # 프로덕션 모드
+npm run scheduler:dev  # 개발 모드 (nodemon)
+
 Endpoints
 ------
 POST /api/joytel/esim/order
@@ -25,6 +29,28 @@ POST /api/joytel/esim/callback
 POST /api/joytel/coupon/redeem
 POST /api/joytel/notify/coupon/redeem
 POST /api/joytel/esim/status-usage
+
+스케줄러 (Order Scheduler)
+------
+주문 스케줄러는 1분마다 다음 작업을 수행합니다:
+
+1. **주문 정보 수집**: NaverCommerceApiClient(Java)를 실행하여 네이버 커머스 API에서 새로운 주문 정보를 가져옵니다.
+2. **중복 방지**: productOrderId와 orderId를 기준으로 중복된 주문은 저장하지 않습니다.
+3. **데이터베이스 저장**: 새로운 주문 정보를 ringtalk.user 테이블에 저장합니다.
+4. **카카오 메시지 처리**: 
+   - orderTid가 null이고 kakaoSendYN이 'N'인 주문을 찾습니다.
+   - CustomerApiClient(Java)를 호출하여 orderTid를 생성/업데이트합니다.
+   - BizPPurio API를 통해 카카오 메시지를 전송합니다.
+   - 메시지 전송 성공 시 kakaoSendYN을 'Y'로 업데이트합니다.
+
+### 필수 요구사항:
+- Java 환경 설정 (NaverCommerceApiClient, CustomerApiClient 실행용)
+- MySQL 데이터베이스 연결
+- ringtalk.user 테이블 구조
+- BizPPurio API 토큰 설정
+
+### 로그 확인:
+스케줄러 실행 중 모든 과정이 콘솔에 로깅됩니다. 오류 발생 시 해당 단계만 건너뛰고 다음 처리를 계속 진행합니다.
 
 Notes
 ------

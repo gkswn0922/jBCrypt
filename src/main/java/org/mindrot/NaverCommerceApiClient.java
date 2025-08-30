@@ -40,7 +40,7 @@ public class NaverCommerceApiClient {
                 log("Access Token 발급 성공: " + accessToken);
                 
                 // 3. 상품 주문 정보 조회 (오늘 날짜로 설정)
-                String fromDate = getYesterdayDateString();
+                String fromDate = getTodayDateString();
                 log("조회 시작 날짜: " + fromDate);
                 
                 List<OrderInfo> orderInfos = getProductOrderIds(accessToken, fromDate);
@@ -61,7 +61,7 @@ public class NaverCommerceApiClient {
                         log("MySQL 연결 성공");
                         
                         // user 테이블에 주문 정보 저장
-                        UserOrderDAO.saveOrderInfos(orderInfos);
+                        // UserOrderDAO.saveOrderInfos(orderInfos);
                         log("user 테이블에 주문 정보 저장 완료");
                         
                         // 저장된 데이터 확인 (첫 번째 항목만)
@@ -105,16 +105,16 @@ public class NaverCommerceApiClient {
             // 요청 바디 구성
             String requestBody = String.format(
                 "client_id=%s&timestamp=%d&grant_type=client_credentials&client_secret_sign=%s&type=SELF",
-                URLEncoder.encode(clientId, StandardCharsets.UTF_8),
+                URLEncoder.encode(clientId, StandardCharsets.UTF_8.name()),
                 timestamp,
-                URLEncoder.encode(signature, StandardCharsets.UTF_8)
+                URLEncoder.encode(signature, StandardCharsets.UTF_8.name())
             );
             
             log("OAuth 요청 바디: " + requestBody);
             
             // 요청 전송
             try (OutputStream os = conn.getOutputStream()) {
-                byte[] input = requestBody.getBytes(StandardCharsets.UTF_8);
+                byte[] input = requestBody.getBytes(StandardCharsets.UTF_8.name());
                 os.write(input, 0, input.length);
             }
             
@@ -187,7 +187,7 @@ public class NaverCommerceApiClient {
         if (inputStream == null) return "";
         
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
+                new InputStreamReader(inputStream, StandardCharsets.UTF_8.name()))) {
             StringBuilder response = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
@@ -382,7 +382,7 @@ public class NaverCommerceApiClient {
         // ISO 8601 형식으로 변환하고 URL 인코딩
         String isoDate = todayStart.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"));
         try {
-            return URLEncoder.encode(isoDate + "+09:00", StandardCharsets.UTF_8);
+            return URLEncoder.encode(isoDate + "+09:00", StandardCharsets.UTF_8.name());
         } catch (Exception e) {
             // 인코딩 실패 시 기본값 반환
             return "2025-01-27T00:00:00.000%2B09:00";
@@ -397,7 +397,7 @@ public class NaverCommerceApiClient {
         // ISO 8601 형식으로 변환하고 URL 인코딩
         String isoDate = yesterdayStart.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"));
         try {
-            return URLEncoder.encode(isoDate + "+09:00", StandardCharsets.UTF_8);
+            return URLEncoder.encode(isoDate + "+09:00", StandardCharsets.UTF_8.name());
         } catch (Exception e) {
             // 인코딩 실패 시 기본값 반환
             return "2025-01-26T00:00:00.000%2B09:00";

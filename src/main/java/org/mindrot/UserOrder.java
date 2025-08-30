@@ -1,16 +1,14 @@
 package org.mindrot;
 
 public class UserOrder {
-    private Long id;
     private String ordererName;
     private String ordererTel;
     private String email;
     private Integer quantity;
+    private String productName;
+    private int day;
     
     // Getters and Setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    
     public String getOrdererName() { return ordererName; }
     public void setOrdererName(String ordererName) { this.ordererName = ordererName; }
     
@@ -22,4 +20,10 @@ public class UserOrder {
     
     public Integer getQuantity() { return quantity; }
     public void setQuantity(Integer quantity) { this.quantity = quantity; }
+    public String getProductName() { return productName; }
+    public int getDay() { return day; }
+    public void setProductName(String string) { this.productName = string;  }
+    public void setDay(int int1) {
+        this.day = int1;
+    }
 }

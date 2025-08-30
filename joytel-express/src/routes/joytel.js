@@ -6,10 +6,20 @@ import { MySQLClient } from "../clients/mysqlClient.js";
 import winston from 'winston';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
+import { createHash } from "crypto";
 // ES 모듈에서 __dirname 대체
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const AppId = "39q97DPCzyj1";
+const AppSecret = "E24C1750751A46ACA9931772DF67BBFA";
+const TransId = Date.now().toString(); // 고유 트랜잭션 ID
+const Timestamp = Date.now().toString();
+
+const rawString = AppId + TransId + Timestamp + AppSecret;
+
+const Ciphertext = createHash("md5")
+  .update(rawString)
+  .digest("hex");
 
 // Winston 로거 설정
 const logger = winston.createLogger({
@@ -120,8 +130,53 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
       logger.info('snPin 업데이트 성공', {
         orderTid,
         snPin,
-        timestamp: new Date().toISOString()
+        timestamp: Date.now().toString()
       });
+
+      // snPin 업데이트 성공 후 coupon redeem API 호출
+      try {
+        const couponResponse = await fetch('https://esim.joytelecom.com/openapi/coupon/redeem', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            "AppId": AppId,
+            "TransId": TransId,
+            "Timestamp": Timestamp,
+            "Ciphertext": Ciphertext
+          },
+          body: JSON.stringify({
+            coupon: snPin
+          })
+        });
+
+        const couponResult = await couponResponse.text();
+        
+        logger.info('Coupon redeem API 호출 완료', {
+          orderTid,
+          snPin,
+          couponApiStatus: couponResponse.status,
+          couponApiResponse: couponResult,
+          timestamp: new Date().toISOString()
+        });
+
+        if (!couponResponse.ok) {
+          logger.warn('Coupon redeem API 호출 실패', {
+            orderTid,
+            snPin,
+            status: couponResponse.status,
+            response: couponResult
+          });
+        }
+
+      } catch (couponError) {
+        logger.error('Coupon redeem API 호출 중 오류', {
+          orderTid,
+          snPin,
+          error: couponError.message,
+          timestamp: new Date().toISOString()
+        });
+        // coupon API 실패해도 전체 응답은 성공으로 처리
+      }
 
       return res.status(200).json({ 
         ok: true, 
@@ -167,10 +222,75 @@ router.post("/coupon/redeem", requireJsonContent, async (req, res) => {
 // 4) Coupon Redeem Result Callback (QR code)
 router.post("/notify/coupon/redeem", requireJsonContent, async (req, res) => {
   try {
-    const _payload = req.body;
-    // TODO: 비즈니스 로직: 쿠폰 상태 업데이트, QR 저장 등
-    return res.status(200).json({ ok: true });
+    const { transId, resultCode, resultMesg, finishTime, data } = req.body;
+    
+    // 외부로부터 받은 파라미터들을 로그로 기록
+    logger.info('Coupon Redeem Callback API 호출', {
+      timestamp: new Date().toISOString(),
+      headers: req.headers,
+      body: req.body,
+      bodyType: typeof req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : 'null',
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      endpoint: '/notify/coupon/redeem'
+    });
+
+    if (!data.qrcode) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'data.qrcode가 필요합니다.' 
+      });
+    }
+
+    // 디버깅을 위한 파라미터 로깅
+    logger.info('파라미터 검증 완료', {
+      transId,
+      coupon: data.coupon,
+      qrcode: data.qrcode,
+      resultCode,
+      resultMesg,
+      finishTime
+    });
+
+         // 데이터베이스에 QR 코드 저장 (BizPPurio API 호출 포함)
+     try {
+       await mysqlClient.updateQrCodeByTransId(data.coupon, data.qrcode);
+       
+       logger.info('QR 코드 업데이트 및 BizPPurio API 호출 완료', {
+         coupon: data.coupon,
+         qrcode: data.qrcode,
+         resultCode,
+         resultMesg,
+         finishTime,
+         timestamp: new Date().toISOString()
+       });
+
+       return res.status(200).json({ 
+         ok: true, 
+         message: 'QR 코드가 성공적으로 저장되었습니다.',
+         transId
+       });
+    } catch (dbError) {
+      logger.error('QR 코드 저장 실패', {
+        transId,
+        qrcode: data.qrcode,
+        error: dbError.message,
+        timestamp: new Date().toISOString()
+      });
+
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'QR 코드 저장 실패: ' + dbError.message 
+      });
+    }
   } catch (err) {
+    // 에러 로깅
+    logger.error('Coupon Redeem Callback API 에러', {
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    });
     return res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });

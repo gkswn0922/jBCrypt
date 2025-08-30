@@ -28,7 +28,7 @@ app.get("/", (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JoyTel API 관리자</title>
+    <title>ringtalk 관리자</title>
     <style>
         * {
             margin: 0;
@@ -171,7 +171,7 @@ app.get("/", (req, res) => {
 <body>
     <div class="login-container">
         <div class="logo">
-            <h1>🔐 JoyTel API</h1>
+            <h1>🔐 ringtalk</h1>
             <p>관리자 로그인</p>
         </div>
         
