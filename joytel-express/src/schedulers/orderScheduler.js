@@ -94,11 +94,49 @@ export class OrderScheduler {
 
       console.log('Java 실행 결과:', stdout);
 
-      // Java 프로그램이 데이터베이스에 저장한 주문 정보를 조회
-      return await this.getRecentOrderInfos();
+      // Java 출력에서 JSON 데이터 추출
+      return this.parseOrderDataFromJavaOutput(stdout);
 
     } catch (error) {
       console.error('NaverCommerceApiClient 실행 실패:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Java 출력에서 JSON 주문 데이터 파싱
+   */
+  parseOrderDataFromJavaOutput(stdout) {
+    try {
+      const lines = stdout.split('\n');
+      let isDataSection = false;
+      let jsonData = '';
+
+      for (const line of lines) {
+        if (line.trim() === 'NAVER_ORDER_DATA_START') {
+          isDataSection = true;
+          continue;
+        }
+        if (line.trim() === 'NAVER_ORDER_DATA_END') {
+          break;
+        }
+        if (isDataSection) {
+          jsonData += line;
+        }
+      }
+
+      if (jsonData.trim()) {
+        const orderInfos = JSON.parse(jsonData.trim());
+        console.log(`Java에서 ${orderInfos.length}개의 주문 정보를 파싱했습니다.`);
+        return orderInfos;
+      } else {
+        console.log('Java 출력에서 주문 데이터를 찾을 수 없습니다.');
+        return [];
+      }
+
+    } catch (error) {
+      console.error('Java 출력 파싱 실패:', error);
+      console.error('stdout:', stdout);
       return [];
     }
   }
@@ -151,6 +189,11 @@ export class OrderScheduler {
           console.log(`중복된 주문 건너뛰기: productOrderId=${orderInfo.productOrderId}, orderId=${orderInfo.orderId}`);
           continue;
         }
+        
+        if(!orderInfo.productName || !orderInfo.productName.includes('베트남')) {
+            console.log(`베트남 상품이 아닌 주문 건너뛰기: productOrderId=${orderInfo.productOrderId}, orderId=${orderInfo.orderId}, ordererName=${orderInfo.ordererName}, productName=${orderInfo.productName}`);
+            continue;
+        }
 
         // 중복이 아니면 저장
         const insertQuery = `
@@ -160,16 +203,14 @@ export class OrderScheduler {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'N')
         `;
 
-        if(orderInfo.ordererName != '김형민') {
-          continue;
-        }
+        
 
         const [_insertResult] = await this.mysqlClient.connection.execute(insertQuery, [
           orderInfo.productOrderId,
           orderInfo.orderId,
           orderInfo.ordererName,
-          parseInt(orderInfo.ordererTel) || 0,
-          orderInfo.email || '',
+          parseInt(orderInfo.ordererTel.replace(/[^0-9]/g, '')) || 0,
+          orderInfo.email || 'example@example.com',
           orderInfo.productName || 'eSIM 상품',
           orderInfo.day || 1,
           orderInfo.quantity || 1,
@@ -214,7 +255,7 @@ export class OrderScheduler {
           console.log(`\n처리 중: productOrderId=${row.productOrderId}`);
 
           // CustomerApiClient 호출하여 orderTid 생성 및 업데이트
-        //   await this.callCustomerApiClient(row);
+          await this.callCustomerApiClient(row);
 
           // orderTid가 업데이트되었는지 확인
           const updatedOrderQuery = `
@@ -229,7 +270,7 @@ export class OrderScheduler {
             console.log(`orderTid 업데이트 확인됨: ${updatedRows[0].orderTid}`);
             
             // BizPPurio 메시지 전송
-            // await this.sendBizPPurioMessage(row);
+            //await this.sendBizPPurioMessage(row);
           }
 
         } catch (error) {

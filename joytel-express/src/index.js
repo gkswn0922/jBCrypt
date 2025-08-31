@@ -2,14 +2,17 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { config } from "./config/index.js";
-import { ipWhitelistMiddleware } from "./middlewares/security.js";
 import { router as joytelRouter } from "./routes/joytel.js";
+import { MySQLClient } from "./clients/mysqlClient.js";
 
 const app = express();
 
 app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+// 정적 파일 제공
+app.use(express.static('public'));
 
 // IP 화이트리스트 (전역) - 테스트용으로 임시 비활성화
 // app.use(ipWhitelistMiddleware);
@@ -21,6 +24,61 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", env: config.env });
 });
 
+// 관리자 대시보드 API
+app.get("/api/admin/orders", async (req, res) => {
+  const mysqlClient = new MySQLClient();
+  
+  try {
+    await mysqlClient.connect();
+    
+    // 전체 주문 목록 조회 (최신 순)
+    const ordersQuery = `
+      SELECT 
+        productOrderId, orderId, ordererName, ordererTel, email, 
+        productName, day, quantity, snPin, QR, orderTid, kakaoSendYN, 
+        created_at, updated_at
+      FROM user 
+      ORDER BY created_at DESC
+      LIMIT 1000
+    `;
+    
+    const [orders] = await mysqlClient.connection.execute(ordersQuery);
+    
+    // 통계 정보 계산
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN QR IS NOT NULL AND QR != '' THEN 1 ELSE 0 END) as sent,
+        SUM(CASE WHEN QR IS NULL OR QR = '' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) as today
+      FROM user
+    `;
+    
+    const [statsRows] = await mysqlClient.connection.execute(statsQuery);
+    const stats = statsRows[0];
+    
+    res.json({
+      orders: orders,
+      stats: {
+        total: parseInt(stats.total),
+        sent: parseInt(stats.sent),
+        pending: parseInt(stats.pending),
+        today: parseInt(stats.today)
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('관리자 대시보드 데이터 조회 실패:', error);
+    res.status(500).json({ 
+      error: '데이터를 불러오는데 실패했습니다.',
+      message: error.message 
+    });
+  } finally {
+    await mysqlClient.disconnect();
+  }
+});
+
 app.get("/", (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -28,218 +86,76 @@ app.get("/", (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ringtalk 관리자</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .login-container {
-            background: white;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
-        
-        .logo {
-            margin-bottom: 2rem;
-        }
-        
-        .logo h1 {
-            color: #333;
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .logo p {
-            color: #666;
-            font-size: 0.9rem;
-        }
-        
-        .form-group {
-            margin-bottom: 1.5rem;
-            text-align: left;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: #333;
-            font-weight: 500;
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.3s ease;
-        }
-        
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .login-btn {
-            width: 100%;
-            padding: 0.75rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s ease;
-        }
-        
-        .login-btn:hover {
-            transform: translateY(-2px);
-        }
-        
-        .login-btn:active {
-            transform: translateY(0);
-        }
-        
-        .status-info {
-            margin-top: 1.5rem;
-            padding: 1rem;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-        }
-        
-        .status-info h3 {
-            color: #333;
-            font-size: 1rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .status-info p {
-            color: #666;
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-        
-        .api-endpoints {
-            margin-top: 1.5rem;
-            text-align: left;
-        }
-        
-        .api-endpoints h3 {
-            color: #333;
-            font-size: 1rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .endpoint {
-            background: #f8f9fa;
-            padding: 0.5rem;
-            margin-bottom: 0.5rem;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 0.8rem;
-            color: #333;
-        }
-        
-        .endpoint.method {
-            color: #667eea;
-            font-weight: bold;
-        }
-        
-        .endpoint.path {
-            color: #666;
-        }
-    </style>
+    <title>ringtalk 관리자 대시보드</title>
+    <link rel="stylesheet" href="/css/dashboard.css">
 </head>
 <body>
-    <div class="login-container">
-        <div class="logo">
-            <h1>🔐 ringtalk</h1>
-            <p>관리자 로그인</p>
+    <div class="header">
+        <h1>📊 ringtalk 관리자 대시보드</h1>
+        <p>eSIM 주문 및 알림톡 전송 현황</p>
+    </div>
+    
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card total">
+                <h3>전체 주문</h3>
+                <div class="number" id="totalOrders">-</div>
+                <small>총 주문 건수</small>
+            </div>
+            <div class="stat-card sent">
+                <h3>알림톡 전송 완료</h3>
+                <div class="number" id="sentMessages">-</div>
+                <small>QR 코드 발송됨</small>
+            </div>
+            <div class="stat-card pending">
+                <h3>전송 대기</h3>
+                <div class="number" id="pendingMessages">-</div>
+                <small>QR 코드 미발송</small>
+            </div>
+            <div class="stat-card failed">
+                <h3>오늘 주문</h3>
+                <div class="number" id="todayOrders">-</div>
+                <small>당일 신규 주문</small>
+            </div>
         </div>
         
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">사용자명</label>
-                <input type="text" id="username" name="username" placeholder="관리자 계정을 입력하세요" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="password">비밀번호</label>
-                <input type="password" id="password" name="password" placeholder="비밀번호를 입력하세요" required>
-            </div>
-            
-            <button type="submit" class="login-btn">로그인</button>
-        </form>
-        
-        <div class="status-info">
-            <h3>📊 서버 상태</h3>
-            <p>환경: ${config.env}<br>
-            포트: ${config.port}<br>
-            상태: <span style="color: #28a745;">정상</span></p>
+        <div class="controls">
+            <button class="refresh-btn" onclick="loadData()">🔄 새로고침</button>
+            <input type="text" class="search-box" id="searchBox" placeholder="주문번호, 고객명, 전화번호로 검색..." onkeyup="filterTable()">
+            <div class="last-updated" id="lastUpdated"></div>
         </div>
         
-        <div class="api-endpoints">
-            <h3>🔗 API 엔드포인트</h3>
-            <div class="endpoint">
-                <span class="method">GET</span> <span class="path">/health</span> - 서버 상태 확인
+        <div class="data-table">
+            <div class="table-header">
+                📋 주문 목록
             </div>
-            <div class="endpoint">
-                <span class="method">POST</span> <span class="path">/api/joytel/esim/order</span> - eSIM 주문
-            </div>
-            <div class="endpoint">
-                <span class="method">POST</span> <span class="path">/api/joytel/coupon/redeem</span> - 쿠폰 리딤
-            </div>
-            <div class="endpoint">
-                <span class="method">POST</span> <span class="path">/api/joytel/esim/status-usage</span> - 상태 조회
+            <div class="table-content">
+                <table id="orderTable">
+                    <thead>
+                        <tr>
+                            <th>주문번호</th>
+                            <th>고객명</th>
+                            <th>전화번호</th>
+                            <th>이메일</th>
+                            <th>상품명</th>
+                            <th>일수</th>
+                            <th>수량</th>
+                            <th>QR 코드</th>
+                            <th>알림톡 상태</th>
+                            <th>주문일시</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orderTableBody">
+                        <tr>
+                            <td colspan="10" class="loading">데이터를 불러오는 중...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
     
-    <script>
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            
-            // 간단한 검증 (실제로는 서버에서 처리해야 함)
-            if (username === 'admin' && password === 'joytel2024') {
-                alert('로그인 성공! 관리자 페이지로 이동합니다.');
-                // 여기에 실제 로그인 후 리다이렉트 로직 추가
-            } else {
-                alert('사용자명 또는 비밀번호가 올바르지 않습니다.');
-            }
-        });
-        
-        // 입력 필드 포커스 효과
-        document.querySelectorAll('input').forEach(input => {
-            input.addEventListener('focus', function() {
-                this.parentElement.style.transform = 'scale(1.02)';
-            });
-            
-            input.addEventListener('blur', function() {
-                this.parentElement.style.transform = 'scale(1)';
-            });
-        });
-    </script>
+    <script src="/js/dashboard.js"></script>
 </body>
 </html>
   `);

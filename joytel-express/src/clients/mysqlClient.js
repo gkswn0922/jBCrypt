@@ -59,13 +59,13 @@ export class MySQLClient {
     }
   }
 
-  async updateQrCodeByTransId(snPin, qrCode) {
+  async updateQrCodeByTransId(snPinString, qrCodeString) {
     try {
       // 파라미터 검증
-      if (!snPin) {
-        throw new Error('snPin가 필요합니다.');
+      if (!snPinString) {
+        throw new Error('snPin이 필요합니다.');
       }
-      if (!qrCode) {
+      if (!qrCodeString) {
         throw new Error('qrCode가 필요합니다.');
       }
 
@@ -73,6 +73,21 @@ export class MySQLClient {
         await this.connect();
       }
 
+      // | 구분자로 분리하고 빈 문자열 제거
+      const snPins = snPinString.split('|').filter(sn => sn.trim());
+      const qrCodes = qrCodeString.split('|').filter(qr => qr.trim());
+
+      console.log('QR 코드 업데이트 쿼리 실행:', { 
+        snPinCount: snPins.length, 
+        qrCodeCount: qrCodes.length,
+        snPins: snPins,
+        qrCodes: qrCodes
+      });
+
+      // 필터링된 QR 코드들을 다시 |로 연결
+      const filteredQrCodeString = qrCodes.join('|');
+
+      // snPin 전체 문자열로 사용자 찾기 (| 구분자로 저장된 경우)
       const query = `
         UPDATE user 
         SET QR = ?, 
@@ -80,35 +95,101 @@ export class MySQLClient {
         WHERE snPin = ?
       `;
 
-      console.log('QR 코드 업데이트 쿼리 실행:', { snPin, qrcode: qrCode });
-      const [result] = await this.connection.execute(query, [qrCode, snPin]);
+      const [result] = await this.connection.execute(query, [filteredQrCodeString, snPinString]);
+      let updatedCount = result.affectedRows;
       
-      if (result.affectedRows === 0) {
-        throw new Error(`snPin ${snPin}에 해당하는 사용자를 찾을 수 없습니다.`);
+      if (updatedCount > 0) {
+        console.log(`snPin ${snPinString}의 QR 코드가 업데이트되었습니다.`);
+      } else {
+        // 전체 문자열로 찾지 못한 경우, 개별 snPin으로 시도
+        console.log('전체 snPin 문자열로 찾지 못함, 개별 snPin으로 시도');
+        
+        for (let i = 0; i < snPins.length; i++) {
+          const snPin = snPins[i];
+          const qrCode = qrCodes[i] || ''; // qrCode가 없는 경우 빈 문자열
+
+          // LIKE 패턴으로 snPin이 포함된 레코드 찾기
+          const individualQuery = `
+            UPDATE user 
+            SET QR = CASE 
+              WHEN QR IS NULL OR QR = '' THEN ?
+              ELSE CONCAT(QR, '|', ?)
+            END,
+            updated_at = NOW() 
+            WHERE snPin LIKE ? OR snPin LIKE ? OR snPin LIKE ? OR snPin = ?
+          `;
+
+          const likePatterns = [
+            `%|${snPin}|%`,  // 중간에 있는 경우
+            `${snPin}|%`,    // 맨 앞에 있는 경우  
+            `%|${snPin}`,    // 맨 뒤에 있는 경우
+            snPin            // 단독인 경우
+          ];
+
+          const [individualResult] = await this.connection.execute(individualQuery, [
+            qrCode, qrCode, ...likePatterns
+          ]);
+          
+          if (individualResult.affectedRows > 0) {
+            updatedCount += individualResult.affectedRows;
+            console.log(`snPin ${snPin}의 QR 코드가 업데이트되었습니다.`);
+          } else {
+            console.warn(`snPin ${snPin}에 해당하는 사용자를 찾을 수 없습니다.`);
+          }
+        }
       }
 
-      console.log(`snPin ${snPin}의 QR 코드가 업데이트되었습니다.`);
+      if (updatedCount === 0) {
+        throw new Error(`모든 snPin에 대해 업데이트할 수 있는 사용자를 찾을 수 없습니다.`);
+      }
+
+      console.log(`총 ${updatedCount}개의 snPin에 대해 QR 코드가 업데이트되었습니다.`);
 
       // QR 코드 저장 성공 후 BizPPurio API 호출
       try {
-                 // 사용자 정보 조회 (전화번호 등 필요한 정보)
-         const userQuery = `
-           SELECT orderId, ordererTel, ordererName, productName FROM user WHERE snPin = ?
-         `;
-         const [userRows] = await this.connection.execute(userQuery, [snPin]);
-         
-         if (userRows.length > 0) {
-           const user = userRows[0];
-           const orderId = user.orderId;
-           const phoneNumber = user.ordererTel;
-           const productName = user.productName || 'eSIM 해외 데이터';
-           
-           if (phoneNumber) {
-             console.log('BizPPurio API 호출 시작:', { snPin, qrCode, phoneNumber, orderId, productName });
-             
-             // BizPPurio API 호출
-             await this.bizppurioClient.sendQrCodeMessage(qrCode, phoneNumber, orderId, productName);
+        // 먼저 전체 snPin 문자열로 사용자 정보 조회
+        let userQuery = `
+          SELECT orderId, ordererTel, ordererName, productName FROM user WHERE snPin = ?
+        `;
+        let [userRows] = await this.connection.execute(userQuery, [snPinString]);
+        
+        // 전체 문자열로 찾지 못한 경우, 개별 snPin으로 시도
+        if (userRows.length === 0) {
+          const validSnPin = snPins.find(sn => sn.trim());
+          if (validSnPin) {
+            userQuery = `
+              SELECT orderId, ordererTel, ordererName, productName, day FROM user 
+              WHERE snPin LIKE ? OR snPin LIKE ? OR snPin LIKE ? OR snPin = ?
+            `;
+            const likePatterns = [
+              `%|${validSnPin}|%`,  // 중간에 있는 경우
+              `${validSnPin}|%`,    // 맨 앞에 있는 경우  
+              `%|${validSnPin}`,    // 맨 뒤에 있는 경우
+              validSnPin            // 단독인 경우
+            ];
+            [userRows] = await this.connection.execute(userQuery, likePatterns);
+          }
+        }
+        
+        if (userRows.length > 0) {
+          const user = userRows[0];
+          const orderId = user.orderId;
+          const phoneNumber = user.ordererTel;
+          const productName = user.productName || 'eSIM 해외 데이터';
+          const day = user.day || 1;
+          
+          if (phoneNumber) {
+            console.log('BizPPurio API 호출 시작:', { 
+              snPinCount: snPins.length,
+              qrCodeCount: qrCodes.length,
+              phoneNumber, 
+              orderId, 
+              productName 
+            });
             
+            // BizPPurio API 호출 (필터링된 QR 코드 문자열 사용)
+            await this.bizppurioClient.sendQrCodeMessage(filteredQrCodeString, phoneNumber, orderId, productName, day);
+           
             console.log('BizPPurio API 호출 완료');
           } else {
             console.warn('사용자 전화번호가 없어 BizPPurio API 호출을 건너뜁니다.');
@@ -121,7 +202,7 @@ export class MySQLClient {
         // BizPPurio API 실패해도 QR 코드 저장은 성공으로 처리
       }
 
-      return result;
+      return { updatedCount, totalCount: snPins.length };
     } catch (error) {
       console.error('QR 코드 업데이트 실패:', error);
       throw error;

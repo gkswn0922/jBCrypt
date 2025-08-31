@@ -7,6 +7,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class NaverCommerceApiClient {
@@ -39,41 +41,49 @@ public class NaverCommerceApiClient {
             if (accessToken != null) {
                 log("Access Token 발급 성공: " + accessToken);
                 
-                // 3. 상품 주문 정보 조회 (오늘 날짜로 설정)
-                String fromDate = getTodayDateString();
-                log("조회 시작 날짜: " + fromDate);
+                // 3. 상품 주문 정보 조회 (3분 전부터 현재까지)
+                String fromDate = getThreeMinutesAgoDateString();
+                log("조회 시작 날짜 (3분 전): " + fromDate);
                 
                 List<OrderInfo> orderInfos = getProductOrderIds(accessToken, fromDate);
                 
-                // 4. 주문 정보 출력
-                log("=== Order Information ===");
-                log("총 " + orderInfos.size() + "개의 주문 발견:");
-                for (OrderInfo orderInfo : orderInfos) {
-                    log("주문 정보: " + orderInfo.toString());
-                }
-                
-                // 5. MySQL에 주문 정보 저장
+                // 4. 주문 정보를 JSON 형태로 출력 (Node.js에서 파싱용)
+                log("=== Order Information JSON ===");
                 if (!orderInfos.isEmpty()) {
-                    log("=== MySQL 저장 시작 ===");
+                    StringBuilder jsonBuilder = new StringBuilder();
+                    jsonBuilder.append("[");
                     
-                    // MySQL 연결 테스트
-                    if (UserOrderDAO.testConnection()) {
-                        log("MySQL 연결 성공");
+                    for (int i = 0; i < orderInfos.size(); i++) {
+                        OrderInfo orderInfo = orderInfos.get(i);
+                        jsonBuilder.append("{");
+                        jsonBuilder.append("\"productOrderId\":\"").append(escapeJson(orderInfo.getProductOrderId())).append("\",");
+                        jsonBuilder.append("\"orderId\":\"").append(escapeJson(orderInfo.getOrderId())).append("\",");
+                        jsonBuilder.append("\"ordererName\":\"").append(escapeJson(orderInfo.getOrdererName())).append("\",");
+                        jsonBuilder.append("\"ordererTel\":\"").append(escapeJson(orderInfo.getOrdererTel())).append("\",");
+                        jsonBuilder.append("\"email\":\"").append(escapeJson(orderInfo.getEmail() != null ? orderInfo.getEmail() : "")).append("\",");
+                        jsonBuilder.append("\"productName\":\"").append(escapeJson(orderInfo.getProductName() != null ? orderInfo.getProductName() : "")).append("\",");
+                        jsonBuilder.append("\"day\":").append(orderInfo.getDay() != null ? orderInfo.getDay() : 1).append(",");
+                        jsonBuilder.append("\"quantity\":").append(orderInfo.getQuantity() != null ? orderInfo.getQuantity() : 1);
+                        jsonBuilder.append("}");
                         
-                        // user 테이블에 주문 정보 저장
-                        // UserOrderDAO.saveOrderInfos(orderInfos);
-                        log("user 테이블에 주문 정보 저장 완료");
-                        
-                        // 저장된 데이터 확인 (첫 번째 항목만)
-                        if (!orderInfos.isEmpty()) {
-                            log("=== 저장 확인 ===");
-                            UserOrderDAO.getUserByProductOrderId(orderInfos.get(0).getProductOrderId());
+                        if (i < orderInfos.size() - 1) {
+                            jsonBuilder.append(",");
                         }
-                    } else {
-                        log("MySQL 연결 실패 - 데이터를 저장할 수 없습니다.");
                     }
+                    
+                    jsonBuilder.append("]");
+                    
+                    // JSON 데이터를 표준 출력으로 출력 (Node.js에서 파싱)
+                    System.out.println("NAVER_ORDER_DATA_START");
+                    System.out.println(jsonBuilder.toString());
+                    System.out.println("NAVER_ORDER_DATA_END");
+                    
+                    log("총 " + orderInfos.size() + "개의 주문 정보를 JSON으로 출력했습니다.");
                 } else {
-                    log("저장할 주문 데이터가 없습니다.");
+                    System.out.println("NAVER_ORDER_DATA_START");
+                    System.out.println("[]");
+                    System.out.println("NAVER_ORDER_DATA_END");
+                    log("주문 데이터가 없습니다.");
                 }
                 
             } else {
@@ -233,6 +243,11 @@ public class NaverCommerceApiClient {
             String orderId = productOrderId; // 기본값
             String ordererName = "고객_" + productOrderId.substring(0, Math.min(8, productOrderId.length()));
             String ordererTel = "0000000000";
+            String email = "";
+            String productName = "";
+            Integer day = 1; // 기본값
+            String shippingName = "";
+            String shippingTel = "";
             
             if (orderBlockMatcher.find()) {
                 String orderContent = orderBlockMatcher.group(1);
@@ -253,6 +268,36 @@ public class NaverCommerceApiClient {
                 String extractedOrdererTel = extractJsonValue(orderContent, "ordererTel");
                 if (extractedOrdererTel != null && !extractedOrdererTel.isEmpty()) {
                     ordererTel = extractedOrdererTel;
+                }
+                
+                // email 추출
+                String extractedEmail = extractJsonValue(orderContent, "email");
+                if (extractedEmail != null && !extractedEmail.isEmpty()) {
+                    email = extractedEmail;
+                }
+            }
+            
+            // shippingAddress 블록에서 배송지 정보 추출
+            Pattern shippingAddressPattern = Pattern.compile("\"shippingAddress\"\\s*:\\s*\\{([^}]*?)\\}");
+            Matcher shippingAddressMatcher = shippingAddressPattern.matcher(contentBlock);
+            
+            if (shippingAddressMatcher.find()) {
+                String shippingAddressContent = shippingAddressMatcher.group(1);
+                
+                // shippingAddress의 name 추출
+                String extractedShippingName = extractJsonValue(shippingAddressContent, "name");
+                if (extractedShippingName != null && !extractedShippingName.isEmpty()) {
+                    shippingName = extractedShippingName;
+                    // ordererName을 shippingAddress의 name으로 변경
+                    ordererName = extractedShippingName;
+                }
+                
+                // shippingAddress의 tel1 추출
+                String extractedShippingTel = extractJsonValue(shippingAddressContent, "tel1");
+                if (extractedShippingTel != null && !extractedShippingTel.isEmpty()) {
+                    shippingTel = extractedShippingTel;
+                    // ordererTel을 shippingAddress의 tel1로 변경
+                    ordererTel = extractedShippingTel;
                 }
             }
             
@@ -281,14 +326,82 @@ public class NaverCommerceApiClient {
                 if (extractedProductOption != null) {
                     productOption = extractedProductOption;
                 }
+                
+                // productName 추출
+                String extractedProductName = extractJsonValue(productOrderContent, "productName");
+                if (extractedProductName != null && !extractedProductName.isEmpty()) {
+                    productName = extractedProductName;
+                }
+                
+                // productOption에서 productName 추출 (eSIM 데이터 사용량 선택 부분)
+                if (productOption != null && productOption.contains("eSIM 데이터 사용량 선택")) {
+                    String[] parts = productOption.split(" / ");
+                    for (String part : parts) {
+                        if (part.contains("eSIM 데이터 사용량 선택") && part.contains(":")) {
+                            String productNamePart = part.split(":")[1].trim();
+                            if (!productNamePart.equals(".") && !productNamePart.isEmpty()) {
+                                productName = productNamePart;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // day 추출
+                String dayStr = extractJsonValue(productOrderContent, "day");
+                if (dayStr != null && !dayStr.isEmpty()) {
+                    try {
+                        day = Integer.parseInt(dayStr);
+                    } catch (NumberFormatException e) {
+                        day = 1;
+                    }
+                }
+                
+                // productOption에서 day 추출 (사용일수 선택 부분)
+                if (productOption != null && productOption.contains("사용일수 선택")) {
+                    String[] parts = productOption.split(" / ");
+                    for (String part : parts) {
+                        if (part.contains("사용일수 선택") && part.contains(":")) {
+                            String dayPart = part.split(":")[1].trim();
+                            if (!dayPart.equals(".") && !dayPart.isEmpty()) {
+                                // "5일" 등에서 숫자만 추출
+                                String numberOnly = dayPart.replaceAll("[^0-9]", "");
+                                if (!numberOnly.isEmpty()) {
+                                    try {
+                                        day = Integer.parseInt(numberOnly);
+                                    } catch (NumberFormatException e) {
+                                        day = 1;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
             }
             
-            log("추출된 정보 - OrderId: " + orderId + ", Name: " + ordererName + ", Tel: " + ordererTel + ", Quantity: " + quantity);
+            // productOption에서 email 추출 (productOrder 처리 후)
+            if (productOption != null && productOption.contains("이메일")) {
+                String[] parts = productOption.split(" / ");
+                for (String part : parts) {
+                    if (part.contains("이메일") && part.contains(":")) {
+                        // 마지막 ':' 뒤에 있는 문자열을 추출
+                        String emailPart = part.substring(part.lastIndexOf(":") + 1).trim();
+                    
+                        if (!emailPart.equals(".") && emailPart.contains("@")) {
+                            email = emailPart;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            log("추출된 정보 - OrderId: " + orderId + ", Name: " + ordererName + ", Tel: " + ordererTel + ", Email: " + email + ", ProductName: " + productName + ", Day: " + day + ", Quantity: " + quantity);
             log("ProductOption: " + productOption);
             
             // 확장된 생성자로 OrderInfo 생성
             OrderInfo orderInfo = new OrderInfo(productOrderId, orderId, ordererName, ordererTel, 
-                                               null, null, null, quantity, productOption);
+                                               email, day, productName, quantity, productOption);
             
             orderInfos.add(orderInfo);
         }
@@ -388,6 +501,24 @@ public class NaverCommerceApiClient {
             return "2025-01-27T00:00:00.000%2B09:00";
         }
     }
+    
+    /**
+     * 3분 전 날짜를 네이버 API 형식으로 반환합니다.
+     */
+    private static String getThreeMinutesAgoDateString() {
+        // 한국 표준시(KST, UTC+9) 기준
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Seoul"));
+        ZonedDateTime threeMinutesAgo = now.minusMinutes(3);
+    
+        // ISO 8601 형식 +09:00 포함
+        String isoDate = threeMinutesAgo.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX"));
+    
+        try {
+            return URLEncoder.encode(isoDate, StandardCharsets.UTF_8.name());
+        } catch (Exception e) {
+            return "2025-01-27T00:00:00.000%2B09:00";
+        }
+    }
 
     private static String getYesterdayDateString() {
         LocalDateTime now = LocalDateTime.now();
@@ -402,6 +533,18 @@ public class NaverCommerceApiClient {
             // 인코딩 실패 시 기본값 반환
             return "2025-01-26T00:00:00.000%2B09:00";
         }
+    }
+    
+    /**
+     * JSON 문자열 이스케이프 처리
+     */
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        return value.replace("\\", "\\\\")
+                   .replace("\"", "\\\"")
+                   .replace("\n", "\\n")
+                   .replace("\r", "\\r")
+                   .replace("\t", "\\t");
     }
 }
 

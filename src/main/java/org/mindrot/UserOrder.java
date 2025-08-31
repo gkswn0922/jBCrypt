@@ -1,6 +1,7 @@
 package org.mindrot;
 
 public class UserOrder {
+    private String orderId;
     private String ordererName;
     private String ordererTel;
     private String email;
@@ -9,6 +10,9 @@ public class UserOrder {
     private int day;
     
     // Getters and Setters
+    public String getOrderId() { return orderId; }
+    public void setOrderId(String orderId) { this.orderId = orderId; }
+    
     public String getOrdererName() { return ordererName; }
     public void setOrdererName(String ordererName) { this.ordererName = ordererName; }
     

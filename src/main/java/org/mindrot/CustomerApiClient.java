@@ -75,13 +75,13 @@ public class CustomerApiClient {
                 
                 if (newOrderTid != null && !newOrderTid.isEmpty()) {
                     System.out.println("API 응답에서 추출한 orderTid로 업데이트: " + newOrderTid);
-                    updateUserOrderTid(user.getEmail(), newOrderTid);
-                    System.out.println("사용자 이메일 " + user.getEmail() + "의 orderTid가 " + newOrderTid + "로 업데이트되었습니다.");
+                    updateUserOrderTid(user.getOrderId(), newOrderTid);
+                    System.out.println("주문 ID " + user.getOrderId() + "의 orderTid가 " + newOrderTid + "로 업데이트되었습니다.");
                 } else {
                     // 응답에서 orderTid를 못 찾았지만, 요청 시 생성한 orderTid를 사용
                     System.out.println("API 응답에서 orderTid 추출 실패, 요청 시 생성한 orderTid 사용: " + orderRequest.orderTid);
-                    updateUserOrderTid(user.getEmail(), orderRequest.orderTid);
-                    System.out.println("사용자 이메일 " + user.getEmail() + "의 orderTid가 " + orderRequest.orderTid + "로 업데이트되었습니다.");
+                    updateUserOrderTid(user.getOrderId(), orderRequest.orderTid);
+                    System.out.println("주문 ID " + user.getOrderId() + "의 orderTid가 " + orderRequest.orderTid + "로 업데이트되었습니다.");
                 }
                 
                 // API 호출 간격 조절 (너무 빠르게 호출하지 않도록)
@@ -101,13 +101,14 @@ public class CustomerApiClient {
         List<UserOrder> users = new ArrayList<>();
         
         try (Connection conn = MySQLConfig.getConnection()) {
-            String sql = "SELECT ordererName, ordererTel, email, quantity, productName, day FROM ringtalk.user WHERE orderTid IS NULL";
+            String sql = "SELECT orderId, ordererName, ordererTel, email, quantity, productName, day FROM ringtalk.user WHERE orderTid IS NULL";
             
             try (PreparedStatement pstmt = conn.prepareStatement(sql);
                  ResultSet rs = pstmt.executeQuery()) {
                 
                 while (rs.next()) {
                     UserOrder user = new UserOrder();
+                    user.setOrderId(rs.getString("orderId"));
                     user.setOrdererName(rs.getString("ordererName"));
                     user.setOrdererTel(rs.getString("ordererTel"));
                     user.setEmail(rs.getString("email"));
@@ -170,21 +171,21 @@ public class CustomerApiClient {
     }
     
     /**
-     * 사용자의 orderTid를 데이터베이스에 업데이트
+     * 사용자의 orderTid를 데이터베이스에 업데이트 (orderId 기준)
      */
-    private static void updateUserOrderTid(String email, String orderTid) {
+    private static void updateUserOrderTid(String orderId, String orderTid) {
         try (Connection conn = MySQLConfig.getConnection()) {
-            String sql = "UPDATE ringtalk.user SET orderTid = ? WHERE email = ?";
+            String sql = "UPDATE ringtalk.user SET orderTid = ? WHERE orderId = ?";
             
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, orderTid);
-                pstmt.setString(2, email);
+                pstmt.setString(2, orderId);
                 
                 int affectedRows = pstmt.executeUpdate();
                 if (affectedRows > 0) {
-                    System.out.println("데이터베이스 업데이트 성공: 이메일 " + email);
+                    System.out.println("데이터베이스 업데이트 성공: orderId " + orderId);
                 } else {
-                    System.err.println("데이터베이스 업데이트 실패: 이메일 " + email + " - 해당 사용자를 찾을 수 없습니다.");
+                    System.err.println("데이터베이스 업데이트 실패: orderId " + orderId + " - 해당 주문을 찾을 수 없습니다.");
                 }
             }
             

@@ -4,10 +4,21 @@ export class BizPPurioClient {
   constructor() {
     this.baseUrl = 'https://api.bizppurio.com';
     this.token = 'cmluZ3RhbGs6ZG5qZjEwMDBkanIh';
+    this.accessToken = null;
+    this.tokenExpiry = null;
+    this.tokenRefreshTime = 50 * 60 * 1000; // 50분을 밀리초로 변환
   }
 
   async getToken() {
     try {
+      // 현재 시간이 토큰 만료 시간보다 이전이면 기존 토큰 사용
+      if (this.accessToken && this.tokenExpiry && new Date() < this.tokenExpiry) {
+        console.log('기존 BizPPurio 토큰 사용 (만료되지 않음)');
+        return this.accessToken;
+      }
+
+      console.log('BizPPurio 토큰 새로 발급 시작');
+      
       const response = await axios.post(`${this.baseUrl}/v1/token`, {}, {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
@@ -16,20 +27,29 @@ export class BizPPurioClient {
       });
 
       const result = response.data;
-      this.token = result.accesstoken;
+      this.accessToken = result.accesstoken;
       
-      console.log('BizPPurio 토큰 발급 성공');
-      return this.token;
+      // 토큰 만료 시간 설정 (현재 시간 + 50분)
+      this.tokenExpiry = new Date(Date.now() + this.tokenRefreshTime);
+      
+      console.log('BizPPurio 토큰 발급 성공, 만료 시간:', this.tokenExpiry.toISOString());
+      return this.accessToken;
     } catch (error) {
       console.error('BizPPurio 토큰 발급 실패:', error.response?.data || error.message);
       throw error;
     }
   }
 
-  async sendMessage(qrCode, phoneNumber, orderId, productName) {
+  async sendMessage(qrCode, phoneNumber, orderId, productName, day) {
     try {
+
+      // qrCode가 없으면 메시지 전송하지 않음
+      if (!qrCode || qrCode.trim() === '' || qrCode === 'N/A') {
+        console.log('QR 코드가 없어 메시지 전송을 건너뜁니다:', { qrCode, orderId });
+        return { skipped: true, reason: 'QR 코드 없음' };
+      }
       // 토큰이 없거나 만료되었으면 새로 발급
-      if (!this.token || (this.tokenExpiry && new Date() > this.tokenExpiry)) {
+      if (!this.accessToken || (this.tokenExpiry && new Date() > this.tokenExpiry)) {
         await this.getToken();
       }
 
@@ -39,7 +59,7 @@ export class BizPPurioClient {
       // 변수 치환
       const replacedMessage = messageTemplate
         .replace('#{주문번호}', orderId || 'N/A')
-        .replace('#{옵션번호}', productName || 'eSIM 해외 데이터')
+        .replace('#{옵션번호}', productName + ' ' + day + '일' || 'eSIM 해외 데이터')
         .replace('#{qr링크}', qrCode || 'N/A');
 
              // 전화번호 앞에 0 추가
@@ -64,7 +84,7 @@ export class BizPPurioClient {
       const response = await axios.post(`${this.baseUrl}/v3/message`, messageData, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.token}`
+          'Authorization': `Bearer ${this.accessToken}`
         }
       });
 
@@ -77,15 +97,15 @@ export class BizPPurioClient {
     }
   }
 
-  async sendQrCodeMessage(qrCode, phoneNumber, orderId, productName) {
+  async sendQrCodeMessage(qrCode, phoneNumber, orderId, productName, day) {
     try {
       console.log('QR 코드 메시지 전송 시작:', { qrCode, phoneNumber, orderId, productName });
       
-      // 토큰 발급
+      // 토큰 발급 (캐싱된 토큰이 있으면 재사용)
       await this.getToken();
       
       // 메시지 전송
-      const result = await this.sendMessage(qrCode, phoneNumber, orderId, productName);
+      const result = await this.sendMessage(qrCode, phoneNumber, orderId, productName, day);
       
       return result;
     } catch (error) {

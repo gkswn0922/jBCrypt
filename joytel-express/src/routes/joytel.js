@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const AppId = "39q97DPCzyj1";
 const AppSecret = "E24C1750751A46ACA9931772DF67BBFA";
 const TransId = Date.now().toString(); // 고유 트랜잭션 ID
-const Timestamp = Date.now().toString();
+const Timestamp = Date.now();
 
 const rawString = AppId + TransId + Timestamp + AppSecret;
 
@@ -106,72 +106,149 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
       });
     }
 
-    // 첫 번째 아이템의 snList에서 snPin 추출
-    const firstItem = itemList[0];
-    if (!firstItem.snList || !Array.isArray(firstItem.snList) || firstItem.snList.length === 0) {
-      return res.status(400).json({ 
-        ok: false, 
-        error: 'snList가 필요합니다.' 
-      });
+    // 모든 itemList의 snPin을 추출
+    const allSnPins = [];
+    
+    for (const item of itemList) {
+      if (!item.snList || !Array.isArray(item.snList) || item.snList.length === 0) {
+        return res.status(400).json({ 
+          ok: false, 
+          error: 'snList가 필요합니다.' 
+        });
+      }
+      
+      for (const sn of item.snList) {
+        if (sn.snPin) {
+          allSnPins.push(sn.snPin);
+        }
+      }
     }
-
-    const snPin = firstItem.snList[0].snPin;
-    if (!snPin) {
+    
+    if (allSnPins.length === 0) {
       return res.status(400).json({ 
         ok: false, 
         error: 'snPin이 필요합니다.' 
       });
     }
+    
+    // | 구분자로 연결
+    const snPinString = allSnPins.join('|');
 
     // 데이터베이스에서 orderTid로 조회하여 snPin 업데이트
     try {
-      await mysqlClient.updateSnPinByOrderTid(orderTid, snPin);
+      await mysqlClient.updateSnPinByOrderTid(orderTid, snPinString);
       
       logger.info('snPin 업데이트 성공', {
         orderTid,
-        snPin,
+        snPinCount: allSnPins.length,
+        snPins: allSnPins,
+        snPinString,
         timestamp: Date.now().toString()
       });
 
-      // snPin 업데이트 성공 후 coupon redeem API 호출
+      // snPin 업데이트 성공 후 각 snPin마다 coupon redeem API 호출
       try {
-        const couponResponse = await fetch('https://esim.joytelecom.com/openapi/coupon/redeem', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            "AppId": AppId,
-            "TransId": TransId,
-            "Timestamp": Timestamp,
-            "Ciphertext": Ciphertext
-          },
-          body: JSON.stringify({
-            coupon: snPin
-          })
-        });
-
-        const couponResult = await couponResponse.text();
+        const qrCodes = [];
+        const failedSnPins = [];
         
-        logger.info('Coupon redeem API 호출 완료', {
-          orderTid,
-          snPin,
-          couponApiStatus: couponResponse.status,
-          couponApiResponse: couponResult,
-          timestamp: new Date().toISOString()
-        });
+        for (const snPin of allSnPins) {
+          try {
+            // 각 snPin마다 새로운 TransId와 Timestamp 생성
+            const individualTransId = Date.now().toString();
+            const individualTimestamp = Date.now();
+            const individualRawString = AppId + individualTransId + individualTimestamp + AppSecret;
+            const individualCiphertext = createHash("md5")
+              .update(individualRawString)
+              .digest("hex");
+            
+            const couponResponse = await fetch('https://esim.joytelecom.com/openapi/coupon/redeem', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                "AppId": AppId,
+                "TransId": individualTransId,
+                "Timestamp": individualTimestamp,
+                "Ciphertext": individualCiphertext
+              },
+              body: JSON.stringify({
+                coupon: snPin
+              })
+            });
 
-        if (!couponResponse.ok) {
-          logger.warn('Coupon redeem API 호출 실패', {
+            const couponResult = await couponResponse.text();
+            
+            logger.info('Coupon redeem API 호출 완료', {
+              orderTid,
+              snPin,
+              couponApiStatus: couponResponse.status,
+              couponApiResponse: couponResult,
+              timestamp: individualTimestamp
+            });
+
+            if (couponResponse.ok) {
+              // 성공한 경우 qrcode 추출 (응답에서 qrcode 필드 추출)
+              try {
+                const couponData = JSON.parse(couponResult);
+                if (couponData.qrcode) {
+                  qrCodes.push(couponData.qrcode);
+                } else {
+                  qrCodes.push(''); // qrcode가 없는 경우 빈 문자열
+                }
+              } catch (parseError) {
+                qrCodes.push(''); // JSON 파싱 실패 시 빈 문자열
+              }
+            } else {
+              failedSnPins.push(snPin);
+              qrCodes.push(''); // 실패한 경우 빈 문자열
+              logger.warn('Coupon redeem API 호출 실패', {
+                orderTid,
+                snPin,
+                status: couponResponse.status,
+                response: couponResult
+              });
+            }
+            
+            // API 호출 간격 조절 (너무 빠르게 호출하지 않도록)
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+          } catch (individualError) {
+            failedSnPins.push(snPin);
+            qrCodes.push(''); // 개별 호출 실패 시 빈 문자열
+            logger.error('개별 Coupon redeem API 호출 중 오류', {
+              orderTid,
+              snPin,
+              error: individualError.message,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }
+        
+        // 모든 qrcode를 | 구분자로 연결
+        const qrCodeString = qrCodes.join('|');
+        
+        // qrcode 업데이트
+        if (qrCodeString.trim()) {
+          await mysqlClient.updateQrCodeByTransId(snPinString, qrCodeString);
+          logger.info('QR 코드 업데이트 완료', {
             orderTid,
-            snPin,
-            status: couponResponse.status,
-            response: couponResult
+            qrCodeCount: qrCodes.filter(qr => qr !== '').length,
+            qrCodeString
+          });
+        }
+        
+        // 실패한 snPin이 있는 경우 로그
+        if (failedSnPins.length > 0) {
+          logger.warn('일부 snPin 처리 실패', {
+            orderTid,
+            failedSnPins,
+            failedCount: failedSnPins.length,
+            totalCount: allSnPins.length
           });
         }
 
       } catch (couponError) {
         logger.error('Coupon redeem API 호출 중 오류', {
           orderTid,
-          snPin,
           error: couponError.message,
           timestamp: new Date().toISOString()
         });
@@ -182,12 +259,14 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
         ok: true, 
         message: 'snPin이 성공적으로 업데이트되었습니다.',
         orderTid,
-        snPin
+        snPinCount: allSnPins.length,
+        snPins: allSnPins
       });
     } catch (dbError) {
       logger.error('데이터베이스 업데이트 실패', {
         orderTid,
-        snPin,
+        snPinCount: allSnPins.length,
+        snPins: allSnPins,
         error: dbError.message,
         timestamp: new Date().toISOString()
       });
