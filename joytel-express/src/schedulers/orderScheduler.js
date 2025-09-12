@@ -71,6 +71,10 @@ export class OrderScheduler {
       console.log('3. 카카오 메시지 전송 대상 확인 중...');
       await this.processKakaoMessages();
 
+      // 4. 발송 처리 (새로 추가)
+      console.log('4. 발송 처리 대상 확인 중...');
+      await this.processDispatchOrders();
+
       console.log('=== 주문 처리 완료 ===\n');
 
     } catch (error) {
@@ -177,7 +181,7 @@ export class OrderScheduler {
         const duplicateCheckQuery = `
           SELECT COUNT(*) as count 
           FROM user 
-          WHERE productOrderId = ? AND orderId = ?
+          WHERE productOrderId = ?
         `;
 
         const [duplicateResult] = await this.mysqlClient.connection.execute(
@@ -190,17 +194,17 @@ export class OrderScheduler {
           continue;
         }
         
-        if(!orderInfo.productName || !orderInfo.productName.includes('베트남')) {
-            console.log(`베트남 상품이 아닌 주문 건너뛰기: productOrderId=${orderInfo.productOrderId}, orderId=${orderInfo.orderId}, ordererName=${orderInfo.ordererName}, productName=${orderInfo.productName}`);
-            continue;
+        if(!orderInfo.productName || (!orderInfo.productName.includes('베트남') && !orderInfo.productName.includes('일본') && !orderInfo.productName.includes('중국') && !orderInfo.productName.includes('말레이시아')&& !orderInfo.productName.includes('필리핀') && !orderInfo.productName.includes('인도네시아') && !orderInfo.productName.includes('싱가폴') && !orderInfo.productName.includes('홍마') && !orderInfo.productName.includes('미국'))) {
+          console.log(`베트남 또는 일본 상품이 아닌 주문 건너뛰기: productOrderId=${orderInfo.productOrderId}, orderId=${orderInfo.orderId}, ordererName=${orderInfo.ordererName}, productName=${orderInfo.productName}`);
+          continue;
         }
 
         // 중복이 아니면 저장
         const insertQuery = `
           INSERT INTO user (
             productOrderId, orderId, ordererName, ordererTel, email, 
-            productName, day, quantity, snPin, QR, created_at, kakaoSendYN
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'N')
+            productName, day, quantity, snPin, QR, created_at, kakaoSendYN, dispatchStatus
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'N', 0)
         `;
 
         
@@ -367,6 +371,64 @@ export class OrderScheduler {
 
     } catch (error) {
       console.error('kakaoSendYN 업데이트 실패:', error);
+    }
+  }
+
+  /**
+   * 발송 처리 대상 확인 및 처리
+   */
+  async processDispatchOrders() {
+    try {
+      await this.mysqlClient.connect();
+
+      // 발송 처리할 주문들 조회 (dispatchStatus = 0)
+      const dispatchQuery = `
+        SELECT productOrderId, orderId, ordererName, ordererTel, email, 
+               productName, day, quantity, orderTid, dispatchStatus
+        FROM user 
+        WHERE dispatchStatus = 0
+        ORDER BY created_at ASC
+        LIMIT 10
+      `;
+
+      const [dispatchRows] = await this.mysqlClient.connection.execute(dispatchQuery);
+
+      if (dispatchRows.length === 0) {
+        console.log('발송 처리할 주문이 없습니다.');
+        return;
+      }
+
+      console.log(`${dispatchRows.length}개의 발송 처리 대상을 찾았습니다.`);
+
+      // NaverCommerceApiClient의 발송 처리 메서드 호출
+      await this.callDispatchApiClient();
+
+    } catch (error) {
+      console.error('발송 처리 실패:', error);
+    }
+  }
+
+  /**
+   * NaverCommerceApiClient의 발송 처리 메서드 호출
+   */
+  async callDispatchApiClient() {
+    try {
+      console.log('NaverCommerceApiClient 발송 처리 호출 중...');
+
+      // NaverCommerceApiClient의 processDispatchOrders 메서드 실행
+      const { stdout, stderr } = await execAsync('java -cp "target/classes:lib/mysql-connector-j-9.4.0.jar" org.mindrot.NaverCommerceApiClient processDispatchOrders', {
+        cwd: process.cwd() + '/..'  // jBCrypt 폴더로 이동
+      });
+
+      if (stderr) {
+        console.error('NaverCommerceApiClient 발송 처리 stderr:', stderr);
+      }
+
+      console.log('NaverCommerceApiClient 발송 처리 실행 결과:', stdout);
+
+    } catch (error) {
+      console.error('NaverCommerceApiClient 발송 처리 실행 실패:', error);
+      throw error;
     }
   }
 

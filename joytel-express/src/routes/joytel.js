@@ -106,8 +106,9 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
       });
     }
 
-    // 모든 itemList의 snPin을 추출
+    // 모든 itemList의 snPin과 snCode를 추출
     const allSnPins = [];
+    const allSnCodes = [];
     
     for (const item of itemList) {
       if (!item.snList || !Array.isArray(item.snList) || item.snList.length === 0) {
@@ -121,6 +122,9 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
         if (sn.snPin) {
           allSnPins.push(sn.snPin);
         }
+        if (sn.snCode) {
+          allSnCodes.push(sn.snCode);
+        }
       }
     }
     
@@ -133,16 +137,21 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
     
     // | 구분자로 연결
     const snPinString = allSnPins.join('|');
+    const snCodeString = allSnCodes.join('|');
 
-    // 데이터베이스에서 orderTid로 조회하여 snPin 업데이트
+    // 데이터베이스에서 orderTid로 조회하여 snPin과 snCode 업데이트
     try {
       await mysqlClient.updateSnPinByOrderTid(orderTid, snPinString);
+      await mysqlClient.updateSnCodeByOrderTid(orderTid, snCodeString);
       
-      logger.info('snPin 업데이트 성공', {
+      logger.info('snPin과 snCode 업데이트 성공', {
         orderTid,
         snPinCount: allSnPins.length,
         snPins: allSnPins,
         snPinString,
+        snCodeCount: allSnCodes.length,
+        snCodes: allSnCodes,
+        snCodeString,
         timestamp: Date.now().toString()
       });
 
@@ -257,16 +266,20 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
 
       return res.status(200).json({ 
         ok: true, 
-        message: 'snPin이 성공적으로 업데이트되었습니다.',
+        message: 'snPin과 snCode가 성공적으로 업데이트되었습니다.',
         orderTid,
         snPinCount: allSnPins.length,
-        snPins: allSnPins
+        snPins: allSnPins,
+        snCodeCount: allSnCodes.length,
+        snCodes: allSnCodes
       });
     } catch (dbError) {
       logger.error('데이터베이스 업데이트 실패', {
         orderTid,
         snPinCount: allSnPins.length,
         snPins: allSnPins,
+        snCodeCount: allSnCodes.length,
+        snCodes: allSnCodes,
         error: dbError.message,
         timestamp: new Date().toISOString()
       });
@@ -344,6 +357,8 @@ router.post("/notify/coupon/redeem", requireJsonContent, async (req, res) => {
          finishTime,
          timestamp: new Date().toISOString()
        });
+
+       
 
        return res.status(200).json({ 
          ok: true, 

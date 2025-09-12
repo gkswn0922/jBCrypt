@@ -75,13 +75,13 @@ public class CustomerApiClient {
                 
                 if (newOrderTid != null && !newOrderTid.isEmpty()) {
                     System.out.println("API 응답에서 추출한 orderTid로 업데이트: " + newOrderTid);
-                    updateUserOrderTid(user.getOrderId(), newOrderTid);
-                    System.out.println("주문 ID " + user.getOrderId() + "의 orderTid가 " + newOrderTid + "로 업데이트되었습니다.");
+                    updateUserOrderTid(user.getProductOrderId(), newOrderTid);
+                    System.out.println("주문 ID " + user.getProductOrderId() + "의 orderTid가 " + newOrderTid + "로 업데이트되었습니다.");
                 } else {
                     // 응답에서 orderTid를 못 찾았지만, 요청 시 생성한 orderTid를 사용
                     System.out.println("API 응답에서 orderTid 추출 실패, 요청 시 생성한 orderTid 사용: " + orderRequest.orderTid);
-                    updateUserOrderTid(user.getOrderId(), orderRequest.orderTid);
-                    System.out.println("주문 ID " + user.getOrderId() + "의 orderTid가 " + orderRequest.orderTid + "로 업데이트되었습니다.");
+                    updateUserOrderTid(user.getProductOrderId(), orderRequest.orderTid);
+                    System.out.println("주문 ID " + user.getProductOrderId() + "의 orderTid가 " + orderRequest.orderTid + "로 업데이트되었습니다.");
                 }
                 
                 // API 호출 간격 조절 (너무 빠르게 호출하지 않도록)
@@ -101,13 +101,14 @@ public class CustomerApiClient {
         List<UserOrder> users = new ArrayList<>();
         
         try (Connection conn = MySQLConfig.getConnection()) {
-            String sql = "SELECT orderId, ordererName, ordererTel, email, quantity, productName, day FROM ringtalk.user WHERE orderTid IS NULL";
+            String sql = "SELECT productOrderId, orderId, ordererName, ordererTel, email, quantity, productName, day FROM ringtalk.user WHERE orderTid IS NULL";
             
             try (PreparedStatement pstmt = conn.prepareStatement(sql);
                  ResultSet rs = pstmt.executeQuery()) {
                 
                 while (rs.next()) {
                     UserOrder user = new UserOrder();
+                    user.setProductOrderId(rs.getString("productOrderId"));
                     user.setOrderId(rs.getString("orderId"));
                     user.setOrdererName(rs.getString("ordererName"));
                     user.setOrdererTel(rs.getString("ordererTel"));
@@ -173,19 +174,19 @@ public class CustomerApiClient {
     /**
      * 사용자의 orderTid를 데이터베이스에 업데이트 (orderId 기준)
      */
-    private static void updateUserOrderTid(String orderId, String orderTid) {
+    private static void updateUserOrderTid(String productOrderId, String orderTid) {
         try (Connection conn = MySQLConfig.getConnection()) {
-            String sql = "UPDATE ringtalk.user SET orderTid = ? WHERE orderId = ?";
+            String sql = "UPDATE ringtalk.user SET orderTid = ? WHERE productOrderId = ?";
             
             try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
                 pstmt.setString(1, orderTid);
-                pstmt.setString(2, orderId);
+                pstmt.setString(2, productOrderId);
                 
                 int affectedRows = pstmt.executeUpdate();
                 if (affectedRows > 0) {
-                    System.out.println("데이터베이스 업데이트 성공: orderId " + orderId);
+                    System.out.println("데이터베이스 업데이트 성공: productOrderId " + productOrderId);
                 } else {
-                    System.err.println("데이터베이스 업데이트 실패: orderId " + orderId + " - 해당 주문을 찾을 수 없습니다.");
+                    System.err.println("데이터베이스 업데이트 실패: productOrderId " + productOrderId + " - 해당 주문을 찾을 수 없습니다.");
                 }
             }
             
@@ -339,136 +340,1484 @@ public class CustomerApiClient {
         System.out.println("productName: " + productName);
         System.out.println("day: " + day);
         if (productName == null) return "eSIM-test";
-        // 베트남 1기가 상품들
-        if (productName.contains("1기가")) {
-            switch (day) {
-                case 1: return "eSIM-VN1G-01";
-                case 2: return "eSIM-VN1G-03";
-                case 3: return "eSIM-VN1G-03";
-                case 4: return "eSIM-VN1G-05";
-                case 5: return "eSIM-VN1G-05";
-                case 6: return "eSIM-VN1G-07";
-                case 7: return "eSIM-VN1G-07";
-                case 8: return "eSIM-VN1G-10";
-                case 9: return "eSIM-VN1G-10";
-                case 10: return "eSIM-VN1G-10";
-                case 15: return "eSIM-VN1G-15";
-                case 20: return "eSIM-VN1G-20";
-                case 30: return "eSIM-VN1G-30";
+        
+        // 베트남 상품들
+        if (productName.contains("베트남") || productName.contains("VN")) {
+            // 베트남 1기가 상품들
+            if (productName.contains("1기가")) {
+                switch (day) {
+                    case 1: return "eSIM-VN1G-01";
+                    case 2: return "eSIM-VN1G-03";
+                    case 3: return "eSIM-VN1G-03";
+                    case 4: return "eSIM-VN1G-05";
+                    case 5: return "eSIM-VN1G-05";
+                    case 6: return "eSIM-VN1G-07";
+                    case 7: return "eSIM-VN1G-07";
+                    case 8: return "eSIM-VN1G-10";
+                    case 9: return "eSIM-VN1G-10";
+                    case 10: return "eSIM-VN1G-10";
+                    case 15: return "eSIM-VN1G-15";
+                    case 20: return "eSIM-VN1G-20";
+                    case 30: return "eSIM-VN1G-30";
+                }
+            }
+            
+            // 베트남 3기가 상품들
+            if (productName.contains("3기가")) {
+                switch (day) {
+                    case 1: return "eSIM-VN3G-01";
+                    case 2: return "eSIM-VN3G-03";
+                    case 3: return "eSIM-VN3G-03";
+                    case 4: return "eSIM-VN3G-05";
+                    case 5: return "eSIM-VN3G-05";
+                    case 6: return "eSIM-VN3G-07";
+                    case 7: return "eSIM-VN3G-07";
+                    case 8: return "eSIM-VN3G-10";
+                    case 9: return "eSIM-VN3G-10";
+                    case 10: return "eSIM-VN3G-10";
+                    case 15: return "eSIM-VN3G-15";
+                    case 20: return "eSIM-VN3G-20";
+                    case 30: return "eSIM-VN3G-30";
+                }
+            }
+            
+            // 베트남 5기가 상품들 (VT5G)
+            if (productName.contains("5기가") && productName.contains("종료")) {
+                switch (day) {
+                    case 2: return "eSIM-VNVT5G-02";
+                    case 3: return "eSIM-VNVT5G-03";
+                    case 4: return "eSIM-VNVT5G-04";
+                    case 5: return "eSIM-VNVT5G-05";
+                    case 6: return "eSIM-VNVT5G-06";
+                    case 7: return "eSIM-VNVT5G-07";
+                    case 8: return "eSIM-VNVT5G-08";
+                    case 9: return "eSIM-VNVT5G-09";
+                    case 10: return "eSIM-VNVT5G-10";
+                    case 15: return "eSIM-VNVT5G-15";
+                    case 20: return "eSIM-VNVM-5GB-20";
+                    case 30: return "eSIM-VNVT5G-30";
+                }
+            }
+            
+            // 베트남 7기가 상품들 (VT7G)
+            if (productName.contains("7기가") && productName.contains("종료")) {
+                switch (day) {
+                    case 3: return "eSIM-VNVT7G-03";
+                    case 4: return "eSIM-VNVT7G-04";
+                    case 5: return "eSIM-VNVT7G-05";
+                    case 6: return "eSIM-VNVT7G-06";
+                    case 7: return "eSIM-VNVT7G-07";
+                    case 10: return "eSIM-VNVT7G-10";
+                    case 15: return "eSIM-VNVT7G-15";
+                    case 20: return "eSIM-VNVT7G-20";
+                    case 30: return "eSIM-VNVT7G-30";
+                }
+            }
+            
+            // 베트남 MAX 상품들 (무제한)
+            if (productName.contains("MAX") || productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-VNMAX-01";
+                    case 3: return "eSIM-VNMAX-03";
+                    case 4: return "eSIM-VNMAX-05";
+                    case 5: return "eSIM-VNMAX-05";
+                    case 6: return "eSIM-VNMAX-07";
+                    case 7: return "eSIM-VNMAX-07";
+                    case 8: return "eSIM-VNMAX-10";
+                    case 9: return "eSIM-VNMAX-10";
+                    case 10: return "eSIM-VNMAX-10";
+                    case 15: return "eSIM-VNMAX-15";
+                    case 20: return "eSIM-VNMAX-20";
+                    case 30: return "eSIM-VNMAX-30";
+                }
+            }
+            
+            // 베트남 총 데이터 상품들 (T10G, T20G, T30G, T50G)
+            if (productName.contains("총 10기가")) {
+                switch (day) {
+                    case 3: return "eSIM-VNT10G-03";
+                    case 5: return "eSIM-VNT10G-05";
+                    case 7: return "eSIM-VNT10G-07";
+                    case 10: return "eSIM-VNT10G-10";
+                    case 15: return "eSIM-VNT10G-15";
+                    case 30: return "eSIM-VNT10G-30";
+                }
+            }
+            
+            if (productName.contains("총 20기가")) {
+                switch (day) {
+                    case 3: return "eSIM-VNT20G-03";
+                    case 5: return "eSIM-VNT20G-05";
+                    case 7: return "eSIM-VNT20G-07";
+                    case 10: return "eSIM-VNT20G-10";
+                    case 15: return "eSIM-VNT20G-15";
+                    case 30: return "eSIM-VNT20G-30";
+                }
+            }
+            
+            if (productName.contains("총 30기가")) {
+                switch (day) {
+                    case 3: return "eSIM-VNT30G-03";
+                    case 5: return "eSIM-VNMOB30G-05";
+                    case 7: return "eSIM-VNT30G-07";
+                    case 10: return "eSIM-VNT30G-10";
+                    case 15: return "eSIM-VNT30G-15";
+                    case 30: return "eSIM-VNT30G-30";
+                }
+            }
+            
+            if (productName.contains("총 50기가")) {
+                switch (day) {
+                    case 3: return "eSIM-VNT50G-03";
+                    case 5: return "eSIM-VNT50G-05";
+                    case 7: return "eSIM-VNT50G-07";
+                    case 10: return "eSIM-VNMOB50G-10";
+                    case 15: return "eSIM-VNT50G-15";
+                    case 30: return "eSIM-VNT50G-30";
+                }
             }
         }
         
-        // 베트남 3기가 상품들
-        if (productName.contains("3기가")) {
-            switch (day) {
-                case 1: return "eSIM-VN3G-01";
-                case 2: return "eSIM-VN3G-03";
-                case 3: return "eSIM-VN3G-03";
-                case 4: return "eSIM-VN3G-05";
-                case 5: return "eSIM-VN3G-05";
-                case 6: return "eSIM-VN3G-07";
-                case 7: return "eSIM-VN3G-07";
-                case 8: return "eSIM-VN3G-10";
-                case 9: return "eSIM-VN3G-10";
-                case 10: return "eSIM-VN3G-10";
-                case 15: return "eSIM-VN3G-15";
-                case 20: return "eSIM-VN3G-20";
-                case 30: return "eSIM-VN3G-30";
+        // 일본 상품들
+        if (productName.contains("일본") || productName.contains("JP")) {
+            // 일본 1기가 상품들 (SB1G)
+            if (productName.contains("매일 1기가")) {
+                switch (day) {
+                    case 1: return "eSIM -SB1G-01";
+                    case 2: return "eSIM -SB1G-03";
+                    case 3: return "eSIM -SB1G-03";
+                    case 4: return "eSIM -SB1G-04";
+                    case 5: return "eSIM -SB1G-05";
+                    case 6: return "eSIM -SB1G-06";
+                    case 7: return "eSIM -SB1G-07";
+                    case 10: return "eSIM -SB1G-10";
+                    case 15: return "eSIM -SB1G-15";
+                    case 20: return "eSIM -SB1G-20";
+                    case 30: return "eSIM -SB1G-30";
+                }
+            }
+            
+            // 일본 2기가 상품들 (SB2G)
+            if (productName.contains("매일 2기가")) {
+                switch (day) {
+                    case 1: return "eSIM -SB2G-01";
+                    case 2: return "eSIM -SB2G-03";
+                    case 3: return "eSIM -SB2G-03";
+                    case 4: return "eSIM -SB2G-04";
+                    case 5: return "eSIM -SB2G-05";
+                    case 6: return "eSIM -SB2G-06";
+                    case 7: return "eSIM -SB2G-07";
+                    case 10: return "eSIM -SB2G-10";
+                    case 15: return "eSIM -SB2G-15";
+                    case 20: return "eSIM -SB2G-20";
+                    case 30: return "eSIM -SB2G-30";
+                }
+            }
+            
+            // 일본 3기가 상품들 (SB3G)
+            if (productName.contains("매일 3기가")) {
+                switch (day) {
+                    case 1: return "eSIM -SB3G-01";
+                    case 2: return "eSIM -SB3G-03";
+                    case 3: return "eSIM -SB3G-03";
+                    case 4: return "eSIM -SB3G-04";
+                    case 5: return "eSIM -SB3G-05";
+                    case 6: return "eSIM -SB3G-06";
+                    case 7: return "eSIM -SB3G-07";
+                    case 10: return "eSIM -SB3G-10";
+                    case 15: return "eSIM -SB3G-15";
+                    case 20: return "eSIM -SB3G-20";
+                    case 30: return "eSIM -SB3G-30";
+                }
+            }
+            
+            // 일본 5기가 상품들 (SB5G)
+            if (productName.contains("매일 5기가")) {
+                switch (day) {
+                    case 1: return "eSIM-SB5G-01";
+                    case 2: return "eSIM-SB5G-03";
+                    case 3: return "eSIM-SB5G-03";
+                    case 4: return "eSIM-SB5G-04";
+                    case 5: return "eSIM-SB5G-05";
+                    case 6: return "eSIM-SB5G-06";
+                    case 7: return "eSIM-SB5G-07";
+                    case 10: return "eSIM-SB5G-10";
+                    case 15: return "eSIM-SB5G-15";
+                    case 20: return "eSIM-SB5G-20";
+                    case 30: return "eSIM-SB5G-30";
+                }
+            }
+            
+            // 일본 MAX 상품들 (JPMAX)
+            if (productName.contains("LTE 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-JPMAX-01";
+                    case 2: return "eSIM-JPMAX-03";
+                    case 3: return "eSIM-JPMAX-03";
+                    case 4: return "eSIM-JPMAX-05";
+                    case 5: return "eSIM-JPMAX-05";
+                    case 6: return "eSIM-JPMAX-07";
+                    case 7: return "eSIM-JPMAX-07";
+                    case 10: return "eSIM-JPMAX-10";
+                    case 15: return "eSIM-JPMAX-15";
+                    case 20: return "eSIM-JPMAX-20";
+                    case 30: return "eSIM-JPMAX-30";
+                }
+            }
+            
+            // 일본 10MAX 상품들 (JP10M)
+            if (productName.contains("5G 속도 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-JP10M-01";
+                    case 2: return "eSIM-JP10M-03";
+                    case 3: return "eSIM-JP10M-03";
+                    case 4: return "eSIM-JP10M-05";
+                    case 5: return "eSIM-JP10M-05";
+                    case 6: return "eSIM-JP10M-07";
+                    case 7: return "eSIM-JP10M-07";
+                    case 10: return "eSIM-JP10M-10";
+                    case 15: return "eSIM-JP10M-15";
+                    case 20: return "eSIM-JP10M-20";
+                    case 30: return "eSIM-JP10M-30";
+                }
+            }
+            
+            // 일본 누적 3GB 상품들 (JPT3G)
+            if (productName.contains("총 3기가")) {
+                switch (day) {
+                    case 3: return "eSIM-JPT3G-03";
+                    case 4: return "eSIM-JPT3G-05";
+                    case 5: return "eSIM-JPT3G-05";
+                    case 6: return "eSIM-JPT3G-07";
+                    case 7: return "eSIM-JPT3G-07";
+                    case 10: return "eSIM-JPT3G-10";
+                    case 15: return "eSIM-JPT3G-15";
+                    case 30: return "eSIM-JPT3G-30";
+                }
+            }
+            
+            // 일본 누적 5GB 상품들 (JPT5G)
+            if (productName.contains("총 5기가")) {
+                switch (day) {
+                    case 3: return "eSIM-JPT5G-03";
+                    case 4: return "eSIM-JPT5G-05";
+                    case 5: return "eSIM-JPT5G-05";
+                    case 6: return "eSIM-JPT5G-07";
+                    case 7: return "eSIM-JPT5G-07";
+                    case 10: return "eSIM-JPT5G-10";
+                    case 15: return "eSIM-JPT5G-15";
+                    case 30: return "eSIM-JPT5G-30";
+                }
+            }
+            
+            // 일본 누적 10GB 상품들 (JPT10G)
+            if (productName.contains("총 10기가")) {
+                switch (day) {
+                    case 3: return "eSIM-JPT10G-03";
+                    case 4: return "eSIM-JPT10G-05";
+                    case 5: return "eSIM-JPT10G-05";
+                    case 6: return "eSIM-JPT10G-07";
+                    case 7: return "eSIM-JPT10G-07";
+                    case 10: return "eSIM-JPT10G-10";
+                    case 15: return "eSIM-JPT10G-15";
+                    case 30: return "eSIM-JPT10G-30";
+                }
+            }
+            
+            // 일본 누적 20GB 상품들 (JPT20G)
+            if (productName.contains("총 20기가")) {
+                switch (day) {
+                    case 3: return "eSIM-JPT20G-03";
+                    case 4: return "eSIM-JPT20G-05";
+                    case 5: return "eSIM-JPT20G-05";
+                    case 6: return "eSIM-JPT20G-07";
+                    case 7: return "eSIM-JPT20G-07";
+                    case 10: return "eSIM-JPT20G-10";
+                    case 15: return "eSIM-JPT20G-15";
+                    case 30: return "eSIM-JPT20G-30";
+                }
+            }
+            
+            // 일본 누적 30GB 상품들 (JPT30G)
+            if (productName.contains("총 30기가")) {
+                switch (day) {
+                    case 3: return "eSIM-JPT30G-03";
+                    case 4: return "eSIM-JPT30G-05";
+                    case 5: return "eSIM-JPT30G-05";
+                    case 6: return "eSIM-JPT30G-07";
+                    case 7: return "eSIM-JPT30G-07";
+                    case 10: return "eSIM-JPT30G-10";
+                    case 15: return "eSIM-JPT30G-15";
+                    case 30: return "eSIM-JPT30G-30";
+                }
             }
         }
         
-        // 베트남 5기가 상품들 (VT5G)
-        if (productName.contains("5기가") && productName.contains("종료")) {
-            switch (day) {
-                case 2: return "eSIM-VNVT5G-02";
-                case 3: return "eSIM-VNVT5G-03";
-                case 4: return "eSIM-VNVT5G-04";
-                case 5: return "eSIM-VNVT5G-05";
-                case 6: return "eSIM-VNVT5G-06";
-                case 7: return "eSIM-VNVT5G-07";
-                case 8: return "eSIM-VNVT5G-08";
-                case 9: return "eSIM-VNVT5G-09";
-                case 10: return "eSIM-VNVT5G-10";
-                case 15: return "eSIM-VNVT5G-15";
-                case 30: return "eSIM-VNVT5G-30";
+        // 말레이시아 상품들
+        if (productName.contains("말레이시아") || productName.contains("MY")) {
+            // 말레이시아 5G 매일 1기가 후 저속 무제한 상품들 (SM1G)
+            if (productName.contains("매일 1기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SM1G-01";
+                    case 2: return "eSIM-SM1G-03";
+                    case 3: return "eSIM-SM1G-03";
+                    case 4: return "eSIM-SM1G-05";
+                    case 5: return "eSIM-SM1G-05";
+                    case 6: return "eSIM-SM1G-07";
+                    case 7: return "eSIM-SM1G-07";
+                    case 8: return "eSIM-SM1G-10";
+                    case 9: return "eSIM-SM1G-10";
+                    case 10: return "eSIM-SM1G-10";
+                    case 15: return "eSIM-SM1G-15";
+                    case 20: return "eSIM-SM1G-20";
+                    case 30: return "eSIM-SM1G-30";
+                }
+            }
+            
+            // 말레이시아 5G 매일 2기가 후 저속 무제한 상품들 (SM2G)
+            if (productName.contains("매일 2기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SM2G-01";
+                    case 2: return "eSIM-SM2G-03";
+                    case 3: return "eSIM-SM2G-03";
+                    case 4: return "eSIM-SM2G-05";
+                    case 5: return "eSIM-SM2G-05";
+                    case 6: return "eSIM-SM2G-07";
+                    case 7: return "eSIM-SM2G-07";
+                    case 8: return "eSIM-SM2G-10";
+                    case 9: return "eSIM-SM2G-10";
+                    case 10: return "eSIM-SM2G-10";
+                    case 15: return "eSIM-SM2G-15";
+                    case 20: return "eSIM-SM2G-20";
+                    case 30: return "eSIM-SM2G-30";
+                }
+            }
+            
+            // 말레이시아 5G 매일 3기가 후 저속 무제한 상품들 (SM3G)
+            if (productName.contains("매일 3기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SM3G-01";
+                    case 2: return "eSIM-SM3G-03";
+                    case 3: return "eSIM-SM3G-03";
+                    case 4: return "eSIM-SM3G-05";
+                    case 5: return "eSIM-SM3G-05";
+                    case 6: return "eSIM-SM3G-07";
+                    case 7: return "eSIM-SM3G-07";
+                    case 8: return "eSIM-SM3G-10";
+                    case 9: return "eSIM-SM3G-10";
+                    case 10: return "eSIM-SM3G-10";
+                    case 15: return "eSIM-SM3G-15";
+                    case 20: return "eSIM-SM3G-20";
+                    case 30: return "eSIM-SM3G-30";
+                }
+            }
+            
+            // 말레이시아 5G 속도 무제한 상품들 (SM10M)
+            if (productName.contains("5G 속도 무제한") || productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-SM10M-03";
+                    case 2: return "eSIM-SM10M-03";
+                    case 3: return "eSIM-SM10M-03";
+                    case 4: return "eSIM-SM10M-05";
+                    case 5: return "eSIM-SM10M-05";
+                    case 6: return "eSIM-SM10M-07";
+                    case 7: return "eSIM-SM10M-07";
+                    case 8: return "eSIM-SM10M-10";
+                    case 9: return "eSIM-SM10M-10";
+                    case 10: return "eSIM-SM10M-10";
+                    case 15: return "eSIM-SM10M-15";
+                    case 20: return "eSIM-SM10M-20";
+                    case 30: return "eSIM-SM10M-30";
+                }
+            }
+            
+            // 말레이시아 5G 총 5기가 후 저속 무제한 상품들 (SMT5G)
+            if (productName.contains("총 5기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT5G-03";
+                    case 2: return "eSIM-SMT5G-03";
+                    case 3: return "eSIM-SMT5G-03";
+                    case 4: return "eSIM-SMT5G-05";
+                    case 5: return "eSIM-SMT5G-05";
+                    case 6: return "eSIM-SMT5G-07";
+                    case 7: return "eSIM-SMT5G-07";
+                    case 8: return "eSIM-SMT5G-10";
+                    case 9: return "eSIM-SMT5G-10";
+                    case 10: return "eSIM-SMT5G-10";
+                    case 15: return "eSIM-SMT5G-15";
+                    case 20: return "eSIM-SMT5G-30";
+                    case 30: return "eSIM-SMT5G-30";
+                }
+            }
+            
+            // 말레이시아 5G 총 10기가 후 저속 무제한 상품들 (SMT10G)
+            if (productName.contains("총 10기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT10G-03";
+                    case 2: return "eSIM-SMT10G-03";
+                    case 3: return "eSIM-SMT10G-03";
+                    case 4: return "eSIM-SMT10G-05";
+                    case 5: return "eSIM-SMT10G-05";
+                    case 6: return "eSIM-SMT10G-07";
+                    case 7: return "eSIM-SMT10G-07";
+                    case 8: return "eSIM-SMT10G-10";
+                    case 9: return "eSIM-SMT10G-10";
+                    case 10: return "eSIM-SMT10G-10";
+                    case 15: return "eSIM-SMT10G-15";
+                    case 20: return "eSIM-SMT10G-30";
+                    case 30: return "eSIM-SMT10G-30";
+                }
+            }
+            
+            // 말레이시아 5G 총 20기가 후 저속 무제한 상품들 (SMT20G)
+            if (productName.contains("총 20기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT20G-03";
+                    case 2: return "eSIM-SMT20G-03";
+                    case 3: return "eSIM-SMT20G-03";
+                    case 4: return "eSIM-SMT20G-05";
+                    case 5: return "eSIM-SMT20G-05";
+                    case 6: return "eSIM-SMT20G-07";
+                    case 7: return "eSIM-SMT20G-07";
+                    case 8: return "eSIM-SMT20G-10";
+                    case 9: return "eSIM-SMT20G-10";
+                    case 10: return "eSIM-SMT20G-10";
+                    case 15: return "eSIM-SMT20G-15";
+                    case 20: return "eSIM-SMT20G-30";
+                    case 30: return "eSIM-SMT20G-30";
+                }
+            }
+            
+            // 말레이시아 5G 총 30기가 후 저속 무제한 상품들 (SMT30G)
+            if (productName.contains("총 30기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT30G-03";
+                    case 2: return "eSIM-SMT30G-03";
+                    case 3: return "eSIM-SMT30G-03";
+                    case 4: return "eSIM-SMT30G-05";
+                    case 5: return "eSIM-SMT30G-05";
+                    case 6: return "eSIM-SMT30G-07";
+                    case 7: return "eSIM-SMT30G-07";
+                    case 8: return "eSIM-SMT30G-10";
+                    case 9: return "eSIM-SMT30G-10";
+                    case 10: return "eSIM-SMT30G-10";
+                    case 15: return "eSIM-SMT30G-15";
+                    case 20: return "eSIM-SMT30G-30";
+                    case 30: return "eSIM-SMT30G-30";
+                }
             }
         }
         
-        // 베트남 7기가 상품들 (VT7G)
-        if (productName.contains("7기가") && productName.contains("종료")) {
-            switch (day) {
-                case 3: return "eSIM-VNVT7G-03";
-                case 4: return "eSIM-VNVT7G-04";
-                case 5: return "eSIM-VNVT7G-05";
-                case 6: return "eSIM-VNVT7G-06";
-                case 7: return "eSIM-VNVT7G-07";
-                case 10: return "eSIM-VNVT7G-10";
-                case 15: return "eSIM-VNVT7G-15";
-                case 20: return "eSIM-VNVT7G-20";
-                case 30: return "eSIM-VNVT7G-30";
+        // 필리핀 상품들
+        if (productName.contains("필리핀") || productName.contains("PH")) {
+            // 필리핀 5G 매일 1기가 후 무제한(저속) 상품들 (PH1G)
+            if (productName.contains("매일 1기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PH1G-01";
+                    case 2: return "eSIM-PH1G-03";
+                    case 3: return "eSIM-PH1G-03";
+                    case 4: return "eSIM-PH1G-05";
+                    case 5: return "eSIM-PH1G-05";
+                    case 6: return "eSIM-PH1G-07";
+                    case 7: return "eSIM-PH1G-07";
+                    case 8: return "eSIM-PH1G-10";
+                    case 9: return "eSIM-PH1G-10";
+                    case 10: return "eSIM-PH1G-10";
+                    case 15: return "eSIM-PH1G-15";
+                    case 20: return "eSIM-PH1G-20";
+                    case 30: return "eSIM-PH1G-30";
+                }
+            }
+            
+            // 필리핀 5G 매일 2기가 후 무제한(저속) 상품들 (PH2G)
+            if (productName.contains("매일 2기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PH2G-01";
+                    case 2: return "eSIM-PH2G-03";
+                    case 3: return "eSIM-PH2G-03";
+                    case 4: return "eSIM-PH2G-05";
+                    case 5: return "eSIM-PH2G-05";
+                    case 6: return "eSIM-PH2G-07";
+                    case 7: return "eSIM-PH2G-07";
+                    case 8: return "eSIM-PH2G-10";
+                    case 9: return "eSIM-PH2G-10";
+                    case 10: return "eSIM-PH2G-10";
+                    case 15: return "eSIM-PH2G-15";
+                    case 20: return "eSIM-PH2G-20";
+                    case 30: return "eSIM-PH2G-30";
+                }
+            }
+            
+            // 필리핀 5G 매일 3기가 후 무제한(저속) 상품들 (PH3G)
+            if (productName.contains("매일 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PH3G-01";
+                    case 2: return "eSIM-PH3G-03";
+                    case 3: return "eSIM-PH3G-03";
+                    case 4: return "eSIM-PH3G-05";
+                    case 5: return "eSIM-PH3G-05";
+                    case 6: return "eSIM-PH3G-07";
+                    case 7: return "eSIM-PH3G-07";
+                    case 8: return "eSIM-PH3G-10";
+                    case 9: return "eSIM-PH3G-10";
+                    case 10: return "eSIM-PH3G-10";
+                    case 15: return "eSIM-PH3G-15";
+                    case 20: return "eSIM-PH3G-20";
+                    case 30: return "eSIM-PH3G-30";
+                }
+            }
+            
+            // 필리핀 LTE 속도 무제한 상품들 (PHMAX)
+            if (productName.contains("LTE 속도 무제한") || productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-PHMAX-01";
+                    case 2: return "eSIM-PHMAX-03";
+                    case 3: return "eSIM-PHMAX-03";
+                    case 4: return "eSIM-PHMAX-05";
+                    case 5: return "eSIM-PHMAX-05";
+                    case 6: return "eSIM-PHMAX-07";
+                    case 7: return "eSIM-PHMAX-07";
+                    case 8: return "eSIM-PHMAX-10";
+                    case 9: return "eSIM-PHMAX-10";
+                    case 10: return "eSIM-PHMAX-10";
+                    case 15: return "eSIM-PHMAX-15";
+                    case 20: return "eSIM-PHMAX-20";
+                    case 30: return "eSIM-PHMAX-30";
+                }
+            }
+            
+            // 필리핀 5G 총 3기가 후 무제한(저속) 상품들 (PHT3G)
+            if (productName.contains("총 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PHT3G-03";
+                    case 2: return "eSIM-PHT3G-03";
+                    case 3: return "eSIM-PHT3G-03";
+                    case 4: return "eSIM-PHT3G-05";
+                    case 5: return "eSIM-PHT3G-05";
+                    case 6: return "eSIM-PHT3G-07";
+                    case 7: return "eSIM-PHT3G-07";
+                    case 8: return "eSIM-PHT3G-10";
+                    case 9: return "eSIM-PHT3G-10";
+                    case 10: return "eSIM-PHT3G-10";
+                    case 15: return "eSIM-PHT3G-15";
+                    case 20: return "eSIM-PHT3G-30";
+                    case 30: return "eSIM-PHT3G-30";
+                }
+            }
+            
+            // 필리핀 5G 총 5기가 후 무제한(저속) 상품들 (PHT5G)
+            if (productName.contains("총 5기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PHT5G-03";
+                    case 2: return "eSIM-PHT5G-03";
+                    case 3: return "eSIM-PHT5G-03";
+                    case 4: return "eSIM-PHT5G-05";
+                    case 5: return "eSIM-PHT5G-05";
+                    case 6: return "eSIM-PHT5G-07";
+                    case 7: return "eSIM-PHT5G-07";
+                    case 8: return "eSIM-PHT5G-10";
+                    case 9: return "eSIM-PHT5G-10";
+                    case 10: return "eSIM-PHT5G-10";
+                    case 15: return "eSIM-PHT5G-15";
+                    case 20: return "eSIM-PHT5G-30";
+                    case 30: return "eSIM-PHT5G-30";
+                }
+            }
+            
+            // 필리핀 5G 총 10기가 후 무제한(저속) 상품들 (PHT10G)
+            if (productName.contains("총 10기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PHT10G-03";
+                    case 2: return "eSIM-PHT10G-03";
+                    case 3: return "eSIM-PHT10G-03";
+                    case 4: return "eSIM-PHT10G-05";
+                    case 5: return "eSIM-PHT10G-05";
+                    case 6: return "eSIM-PHT10G-07";
+                    case 7: return "eSIM-PHT10G-07";
+                    case 8: return "eSIM-PHT10G-10";
+                    case 9: return "eSIM-PHT10G-10";
+                    case 10: return "eSIM-PHT10G-10";
+                    case 15: return "eSIM-PHT10G-15";
+                    case 20: return "eSIM-PHT10G-30";
+                    case 30: return "eSIM-PHT10G-30";
+                }
+            }
+            
+            // 필리핀 5G 총 20기가 후 무제한(저속) 상품들 (PHT20G)
+            if (productName.contains("총 20기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PHT20G-03";
+                    case 2: return "eSIM-PHT20G-03";
+                    case 3: return "eSIM-PHT20G-03";
+                    case 4: return "eSIM-PHT20G-05";
+                    case 5: return "eSIM-PHT20G-05";
+                    case 6: return "eSIM-PHT20G-07";
+                    case 7: return "eSIM-PHT20G-07";
+                    case 8: return "eSIM-PHT20G-10";
+                    case 9: return "eSIM-PHT20G-10";
+                    case 10: return "eSIM-PHT20G-10";
+                    case 15: return "eSIM-PHT20G-15";
+                    case 20: return "eSIM-PHT20G-30";
+                    case 30: return "eSIM-PHT20G-30";
+                }
+            }
+            
+            // 필리핀 5G 총 30기가 후 무제한(저속) 상품들 (PHT30G)
+            if (productName.contains("총 30기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-PHT30G-03";
+                    case 2: return "eSIM-PHT30G-03";
+                    case 3: return "eSIM-PHT30G-03";
+                    case 4: return "eSIM-PHT30G-05";
+                    case 5: return "eSIM-PHT30G-05";
+                    case 6: return "eSIM-PHT30G-07";
+                    case 7: return "eSIM-PHT30G-07";
+                    case 8: return "eSIM-PHT30G-10";
+                    case 9: return "eSIM-PHT30G-10";
+                    case 10: return "eSIM-PHT30G-10";
+                    case 15: return "eSIM-PHT30G-15";
+                    case 20: return "eSIM-PHT30G-30";
+                    case 30: return "eSIM-PHT30G-30";
+                }
             }
         }
         
-        // 베트남 MAX 상품들 (무제한)
-        if (productName.contains("MAX") || productName.contains("무제한")) {
-            switch (day) {
-                case 1: return "eSIM-VNMAX-01";
-                case 3: return "eSIM-VNMAX-03";
-                case 4: return "eSIM-VNMAX-05";
-                case 5: return "eSIM-VNMAX-05";
-                case 6: return "eSIM-VNMAX-07";
-                case 7: return "eSIM-VNMAX-07";
-                case 8: return "eSIM-VNMAX-10";
-                case 9: return "eSIM-VNMAX-10";
-                case 10: return "eSIM-VNMAX-10";
-                case 15: return "eSIM-VNMAX-15";
-                case 20: return "eSIM-VNMAX-20";
-                case 30: return "eSIM-VNMAX-30";
+        // 인도네시아 상품들
+        if (productName.contains("인도네시아") || productName.contains("ID")) {
+            // 인도네시아 5G 매일 1기가 후 저속 무제한 상품들 (XMTY1GB)
+            if (productName.contains("매일 1기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTY1GB-01";
+                    case 2: return "eSIM-XMTY1GB-03";
+                    case 3: return "eSIM-XMTY1GB-03";
+                    case 4: return "eSIM-XMTY1GB-05";
+                    case 5: return "eSIM-XMTY1GB-05";
+                    case 6: return "eSIM-XMTY1GB-07";
+                    case 7: return "eSIM-XMTY1GB-07";
+                    case 8: return "eSIM-XMTY1GB-10";
+                    case 9: return "eSIM-XMTY1GB-10";
+                    case 10: return "eSIM-XMTY1GB-10";
+                    case 15: return "eSIM-XMTY1GB-15";
+                    case 20: return "eSIM-XMTY1GB-20";
+                    case 30: return "eSIM-XMTY1GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 매일 2기가 후 저속 무제한 상품들 (XMTY2GB)
+            if (productName.contains("매일 2기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTY2GB-01";
+                    case 2: return "eSIM-XMTY2GB-03";
+                    case 3: return "eSIM-XMTY2GB-03";
+                    case 4: return "eSIM-XMTY2GB-05";
+                    case 5: return "eSIM-XMTY2GB-05";
+                    case 6: return "eSIM-XMTY2GB-07";
+                    case 7: return "eSIM-XMTY2GB-07";
+                    case 8: return "eSIM-XMTY2GB-10";
+                    case 9: return "eSIM-XMTY2GB-10";
+                    case 10: return "eSIM-XMTY2GB-10";
+                    case 15: return "eSIM-XMTY2GB-15";
+                    case 20: return "eSIM-XMTY2GB-20";
+                    case 30: return "eSIM-XMTY2GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 매일 3기가 후 저속 무제한 상품들 (XMTY3GB)
+            if (productName.contains("매일 3기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTY3GB-01";
+                    case 2: return "eSIM-XMTY3GB-03";
+                    case 3: return "eSIM-XMTY3GB-03";
+                    case 4: return "eSIM-XMTY3GB-05";
+                    case 5: return "eSIM-XMTY3GB-05";
+                    case 6: return "eSIM-XMTY3GB-07";
+                    case 7: return "eSIM-XMTY3GB-07";
+                    case 8: return "eSIM-XMTY3GB-10";
+                    case 9: return "eSIM-XMTY3GB-10";
+                    case 10: return "eSIM-XMTY3GB-10";
+                    case 15: return "eSIM-XMTY3GB-15";
+                    case 20: return "eSIM-XMTY3GB-20";
+                    case 30: return "eSIM-XMTY3GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 속도 무제한 상품들 (XMTY10M)
+            if (productName.contains("5G 속도 무제한") || productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTY10M-01";
+                    case 2: return "eSIM-XMTY10M-03";
+                    case 3: return "eSIM-XMTY10M-03";
+                    case 4: return "eSIM-XMTY10M-05";
+                    case 5: return "eSIM-XMTY10M-05";
+                    case 6: return "eSIM-XMTY10M-07";
+                    case 7: return "eSIM-XMTY10M-07";
+                    case 8: return "eSIM-XMTY10M-10";
+                    case 9: return "eSIM-XMTY10M-10";
+                    case 10: return "eSIM-XMTY10M-10";
+                    case 15: return "eSIM-XMTY10M-15";
+                    case 20: return "eSIM-XMTY10M-20";
+                    case 30: return "eSIM-XMTY10M-30";
+                }
+            }
+            
+            // 인도네시아 5G 총 3기가 후 저속 무제한 상품들 (XMTYT3GB)
+            if (productName.contains("총 3기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTYT3GB-03";
+                    case 2: return "eSIM-XMTYT3GB-03";
+                    case 3: return "eSIM-XMTYT3GB-03";
+                    case 4: return "eSIM-XMTYT3GB-05";
+                    case 5: return "eSIM-XMTYT3GB-05";
+                    case 6: return "eSIM-XMTYT3GB-07";
+                    case 7: return "eSIM-XMTYT3GB-07";
+                    case 8: return "eSIM-XMTYT3GB-10";
+                    case 9: return "eSIM-XMTYT3GB-10";
+                    case 10: return "eSIM-XMTYT3GB-10";
+                    case 15: return "eSIM-XMTYT3GB-15";
+                    case 20: return "eSIM-XMTYT3GB-30";
+                    case 30: return "eSIM-XMTYT3GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 총 5기가 후 저속 무제한 상품들 (XMTYT5GB)
+            if (productName.contains("총 5기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTYT5GB-03";
+                    case 2: return "eSIM-XMTYT5GB-03";
+                    case 3: return "eSIM-XMTYT5GB-03";
+                    case 4: return "eSIM-XMTYT5GB-05";
+                    case 5: return "eSIM-XMTYT5GB-05";
+                    case 6: return "eSIM-XMTYT5GB-07";
+                    case 7: return "eSIM-XMTYT5GB-07";
+                    case 8: return "eSIM-XMTYT5GB-10";
+                    case 9: return "eSIM-XMTYT5GB-10";
+                    case 10: return "eSIM-XMTYT5GB-10";
+                    case 15: return "eSIM-XMTYT5GB-15";
+                    case 20: return "eSIM-XMTYT5GB-30";
+                    case 30: return "eSIM-XMTYT5GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 총 10기가 후 저속 무제한 상품들 (XMTYT10GB)
+            if (productName.contains("총 10기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTYT10GB-03";
+                    case 2: return "eSIM-XMTYT10GB-03";
+                    case 3: return "eSIM-XMTYT10GB-03";
+                    case 4: return "eSIM-XMTYT10GB-05";
+                    case 5: return "eSIM-XMTYT10GB-05";
+                    case 6: return "eSIM-XMTYT10GB-07";
+                    case 7: return "eSIM-XMTYT10GB-07";
+                    case 8: return "eSIM-XMTYT10GB-10";
+                    case 9: return "eSIM-XMTYT10GB-10";
+                    case 10: return "eSIM-XMTYT10GB-10";
+                    case 15: return "eSIM-XMTYT10GB-15";
+                    case 20: return "eSIM-XMTYT10GB-30";
+                    case 30: return "eSIM-XMTYT10GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 총 20기가 후 저속 무제한 상품들 (XMTYT20GB)
+            if (productName.contains("총 20기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTYT20GB-03";
+                    case 2: return "eSIM-XMTYT20GB-03";
+                    case 3: return "eSIM-XMTYT20GB-03";
+                    case 4: return "eSIM-XMTYT20GB-05";
+                    case 5: return "eSIM-XMTYT20GB-05";
+                    case 6: return "eSIM-XMTYT20GB-07";
+                    case 7: return "eSIM-XMTYT20GB-07";
+                    case 8: return "eSIM-XMTYT20GB-10";
+                    case 9: return "eSIM-XMTYT20GB-10";
+                    case 10: return "eSIM-XMTYT20GB-10";
+                    case 15: return "eSIM-XMTYT20GB-15";
+                    case 20: return "eSIM-XMTYT20GB-30";
+                    case 30: return "eSIM-XMTYT20GB-30";
+                }
+            }
+            
+            // 인도네시아 5G 총 30기가 후 저속 무제한 상품들 (XMTYT30GB)
+            if (productName.contains("총 30기가") && productName.contains("저속 무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-XMTYT30GB-03";
+                    case 2: return "eSIM-XMTYT30GB-03";
+                    case 3: return "eSIM-XMTYT30GB-03";
+                    case 4: return "eSIM-XMTYT30GB-05";
+                    case 5: return "eSIM-XMTYT30GB-05";
+                    case 6: return "eSIM-XMTYT30GB-07";
+                    case 7: return "eSIM-XMTYT30GB-07";
+                    case 8: return "eSIM-XMTYT30GB-10";
+                    case 9: return "eSIM-XMTYT30GB-10";
+                    case 10: return "eSIM-XMTYT30GB-10";
+                    case 15: return "eSIM-XMTYT30GB-15";
+                    case 20: return "eSIM-XMTYT30GB-30";
+                    case 30: return "eSIM-XMTYT30GB-30";
+                }
             }
         }
         
-        // 베트남 총 데이터 상품들 (T10G, T20G, T30G, T50G)
-        if (productName.contains("총 10기가")) {
-            switch (day) {
-                case 3: return "eSIM-VNT10G-03";
-                case 5: return "eSIM-VNT10G-05";
-                case 7: return "eSIM-VNT10G-07";
-                case 10: return "eSIM-VNT10G-10";
-                case 15: return "eSIM-VNT10G-15";
-                case 30: return "eSIM-VNT10G-30";
+        // 중국 상품들
+        if (productName.contains("중국") || productName.contains("CN")) {
+            // 중국 5G 매일 1기가 후 무제한(저속) 상품들 (CIMCN1G)
+            if (productName.contains("매일 1기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-CIMCN1G-01";
+                    case 2: return "eSIM-CIMCN1G-03";
+                    case 3: return "eSIM-CIMCN1G-03";
+                    case 4: return "eSIM-CIMCN1G-05";
+                    case 5: return "eSIM-CIMCN1G-05";
+                    case 6: return "eSIM-CIMCN1G-07";
+                    case 7: return "eSIM-CIMCN1G-07";
+                    case 8: return "eSIM-CIMCN1G-10";
+                    case 9: return "eSIM-CIMCN1G-10";
+                    case 10: return "eSIM-CIMCN1G-10";
+                    case 15: return "eSIM-CIMCN1G-15";
+                    case 20: return "eSIM-CIMCN1G-20";
+                    case 30: return "eSIM-CIMCN1G-30";
+                }
+            }
+            
+            // 중국 5G 매일 2기가 후 무제한(저속) 상품들 (CIMCN2G)
+            if (productName.contains("매일 2기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-CIMCN2G-01";
+                    case 2: return "eSIM-CIMCN2G-03";
+                    case 3: return "eSIM-CIMCN2G-03";
+                    case 4: return "eSIM-CIMCN2G-05";
+                    case 5: return "eSIM-CIMCN2G-05";
+                    case 6: return "eSIM-CIMCN2G-07";
+                    case 7: return "eSIM-CIMCN2G-07";
+                    case 8: return "eSIM-CIMCN2G-10";
+                    case 9: return "eSIM-CIMCN2G-10";
+                    case 10: return "eSIM-CIMCN2G-10";
+                    case 15: return "eSIM-CIMCN2G-15";
+                    case 20: return "eSIM-CIMCN2G-20";
+                    case 30: return "eSIM-CIMCN2G-30";
+                }
+            }
+            
+            // 중국 5G 매일 3기가 후 무제한(저속) 상품들 (CIMCN3G)
+            if (productName.contains("매일 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-CIMCN3G-01";
+                    case 2: return "eSIM-CIMCN3G-03";
+                    case 3: return "eSIM-CIMCN3G-03";
+                    case 4: return "eSIM-CIMCN3G-05";
+                    case 5: return "eSIM-CIMCN3G-05";
+                    case 6: return "eSIM-CIMCN3G-07";
+                    case 7: return "eSIM-CIMCN3G-07";
+                    case 8: return "eSIM-CIMCN3G-10";
+                    case 9: return "eSIM-CIMCN3G-10";
+                    case 10: return "eSIM-CIMCN3G-10";
+                    case 15: return "eSIM-CIMCN3G-15";
+                    case 20: return "eSIM-CIMCN3G-20";
+                    case 30: return "eSIM-CIMCN3G-30";
+                }
+            }
+            
+            // 중국 5G 속도 무제한 상품들 (CN10M)
+            if (productName.contains("5G 속도 무제한") || productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-CN10M-01";
+                    case 2: return "eSIM-CN10M-03";
+                    case 3: return "eSIM-CN10M-03";
+                    case 4: return "eSIM-CN10M-05";
+                    case 5: return "eSIM-CN10M-05";
+                    case 6: return "eSIM-CN10M-07";
+                    case 7: return "eSIM-CN10M-07";
+                    case 8: return "eSIM-CN10M-10";
+                    case 9: return "eSIM-CN10M-10";
+                    case 10: return "eSIM-CN10M-10";
+                    case 15: return "eSIM-CN10M-15";
+                    case 20: return "eSIM-CN10M-20";
+                    case 30: return "eSIM-CN10M-30";
+                }
+            }
+            
+            // 중국 총 3기가 이후 무제한(저속) 상품들 (CIMCNT3G)
+            if (productName.contains("총 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 3: return "eSIM-CIMCNT3G-03";
+                    case 4: return "eSIM-CIMCNT3G-05";
+                    case 5: return "eSIM-CIMCNT3G-05";
+                    case 6: return "eSIM-CIMCNT3G-07";
+                    case 7: return "eSIM-CIMCNT3G-07";
+                    case 8: return "eSIM-CIMCNT3G-10";
+                    case 9: return "eSIM-CIMCNT3G-10";
+                    case 10: return "eSIM-CIMCNT3G-10";
+                    case 15: return "eSIM-CIMCNT3G-15";
+                    case 30: return "eSIM-CIMCNT3G-30";
+                }
+            }
+            
+            // 중국 총 5기가 이후 무제한(저속) 상품들 (CIMCNT5G)
+            if (productName.contains("총 5기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 3: return "eSIM-CIMCNT5G-03";
+                    case 4: return "eSIM-CIMCNT5G-05";
+                    case 5: return "eSIM-CIMCNT5G-05";
+                    case 6: return "eSIM-CIMCNT5G-07";
+                    case 7: return "eSIM-CIMCNT5G-07";
+                    case 8: return "eSIM-CIMCNT5G-10";
+                    case 9: return "eSIM-CIMCNT5G-10";
+                    case 10: return "eSIM-CIMCNT5G-10";
+                    case 15: return "eSIM-CIMCNT5G-15";
+                    case 30: return "eSIM-CIMCNT5G-30";
+                }
+            }
+            
+            // 중국 총 10기가 이후 무제한(저속) 상품들 (CIMCNT10G)
+            if (productName.contains("총 10기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 3: return "eSIM-CIMCNT10G-03";
+                    case 4: return "eSIM-CIMCNT10G-05";
+                    case 5: return "eSIM-CIMCNT10G-05";
+                    case 6: return "eSIM-CIMCNT10G-07";
+                    case 7: return "eSIM-CIMCNT10G-07";
+                    case 8: return "eSIM-CIMCNT10G-10";
+                    case 9: return "eSIM-CIMCNT10G-10";
+                    case 10: return "eSIM-CIMCNT10G-10";
+                    case 15: return "eSIM-CIMCNT10G-15";
+                    case 30: return "eSIM-CIMCNT10G-30";
+                }
+            }
+            
+            // 중국 총 20기가 이후 무제한(저속) 상품들 (CIMCNT20G)
+            if (productName.contains("총 20기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 3: return "eSIM-CIMCNT20G-03";
+                    case 4: return "eSIM-CIMCNT20G-05";
+                    case 5: return "eSIM-CIMCNT20G-05";
+                    case 6: return "eSIM-CIMCNT20G-07";
+                    case 7: return "eSIM-CIMCNT20G-07";
+                    case 8: return "eSIM-CIMCNT20G-10";
+                    case 9: return "eSIM-CIMCNT20G-10";
+                    case 10: return "eSIM-CIMCNT20G-10";
+                    case 15: return "eSIM-CIMCNT20G-15";
+                    case 30: return "eSIM-CIMCNT20G-30";
+                }
+            }
+            
+            // 중국 총 30기가 이후 무제한(저속) 상품들 (CIMCNT30G)
+            if (productName.contains("총 30기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 3: return "eSIM-CIMCNT30G-03";
+                    case 4: return "eSIM-CIMCNT30G-05";
+                    case 5: return "eSIM-CIMCNT30G-05";
+                    case 6: return "eSIM-CIMCNT30G-07";
+                    case 7: return "eSIM-CIMCNT30G-07";
+                    case 8: return "eSIM-CIMCNT30G-10";
+                    case 9: return "eSIM-CIMCNT30G-10";
+                    case 10: return "eSIM-CIMCNT30G-10";
+                    case 15: return "eSIM-CIMCNT30G-15";
+                    case 30: return "eSIM-CIMCNT30G-30";
+                }
             }
         }
         
-        if (productName.contains("총 20기가")) {
-            switch (day) {
-                case 3: return "eSIM-VNT20G-03";
-                case 5: return "eSIM-VNT20G-05";
-                case 7: return "eSIM-VNT20G-07";
-                case 10: return "eSIM-VNT20G-10";
-                case 15: return "eSIM-VNT20G-15";
-                case 30: return "eSIM-VNT20G-30";
+        // 싱가폴 상품들
+        if (productName.contains("싱가폴") || productName.contains("SG")) {
+            // 싱가폴 5G 매일 1기가 후 무제한(저속) 상품들 (SM1G)
+            if (productName.contains("매일 1기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SM1G-01";
+                    case 2: return "eSIM-SM1G-03";
+                    case 3: return "eSIM-SM1G-03";
+                    case 4: return "eSIM-SM1G-05";
+                    case 5: return "eSIM-SM1G-05";
+                    case 6: return "eSIM-SM1G-07";
+                    case 7: return "eSIM-SM1G-07";
+                    case 8: return "eSIM-SM1G-10";
+                    case 9: return "eSIM-SM1G-10";
+                    case 10: return "eSIM-SM1G-10";
+                    case 15: return "eSIM-SM1G-15";
+                    case 20: return "eSIM-SM1G-20";
+                    case 30: return "eSIM-SM1G-30";
+                }
+            }
+            
+            // 싱가폴 5G 매일 2기가 후 무제한(저속) 상품들 (SM2G)
+            if (productName.contains("매일 2기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SM2G-01";
+                    case 2: return "eSIM-SM2G-03";
+                    case 3: return "eSIM-SM2G-03";
+                    case 4: return "eSIM-SM2G-05";
+                    case 5: return "eSIM-SM2G-05";
+                    case 6: return "eSIM-SM2G-07";
+                    case 7: return "eSIM-SM2G-07";
+                    case 8: return "eSIM-SM2G-10";
+                    case 9: return "eSIM-SM2G-10";
+                    case 10: return "eSIM-SM2G-10";
+                    case 15: return "eSIM-SM2G-15";
+                    case 20: return "eSIM-SM2G-20";
+                    case 30: return "eSIM-SM2G-30";
+                }
+            }
+            
+            // 싱가폴 5G 매일 3기가 후 무제한(저속) 상품들 (SM3G)
+            if (productName.contains("매일 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SM3G-01";
+                    case 2: return "eSIM-SM3G-03";
+                    case 3: return "eSIM-SM3G-03";
+                    case 4: return "eSIM-SM3G-05";
+                    case 5: return "eSIM-SM3G-05";
+                    case 6: return "eSIM-SM3G-07";
+                    case 7: return "eSIM-SM3G-07";
+                    case 8: return "eSIM-SM3G-10";
+                    case 9: return "eSIM-SM3G-10";
+                    case 10: return "eSIM-SM3G-10";
+                    case 15: return "eSIM-SM3G-15";
+                    case 20: return "eSIM-SM3G-20";
+                    case 30: return "eSIM-SM3G-30";
+                }
+            }
+            
+            // 싱가폴 5G 속도 무제한 상품들 (SM10M)
+            if (productName.contains("5G 속도 무제한") || productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-SM10M-03";
+                    case 2: return "eSIM-SM10M-03";
+                    case 3: return "eSIM-SM10M-03";
+                    case 4: return "eSIM-SM10M-05";
+                    case 5: return "eSIM-SM10M-05";
+                    case 6: return "eSIM-SM10M-07";
+                    case 7: return "eSIM-SM10M-07";
+                    case 8: return "eSIM-SM10M-10";
+                    case 9: return "eSIM-SM10M-10";
+                    case 10: return "eSIM-SM10M-10";
+                    case 15: return "eSIM-SM10M-15";
+                    case 20: return "eSIM-SM10M-20";
+                    case 30: return "eSIM-SM10M-30";
+                }
+            }
+            
+            // 싱가폴 5G 총 5기가 후 무제한(저속) 상품들 (SMT5G)
+            if (productName.contains("총 5기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT5G-03";
+                    case 2: return "eSIM-SMT5G-03";
+                    case 3: return "eSIM-SMT5G-03";
+                    case 4: return "eSIM-SMT5G-05";
+                    case 5: return "eSIM-SMT5G-05";
+                    case 6: return "eSIM-SMT5G-07";
+                    case 7: return "eSIM-SMT5G-07";
+                    case 8: return "eSIM-SMT5G-10";
+                    case 9: return "eSIM-SMT5G-10";
+                    case 10: return "eSIM-SMT5G-10";
+                    case 15: return "eSIM-SMT5G-15";
+                    case 20: return "eSIM-SMT5G-30";
+                    case 30: return "eSIM-SMT5G-30";
+                }
+            }
+            
+            // 싱가폴 5G 총 10기가 후 무제한(저속) 상품들 (SMT10G)
+            if (productName.contains("총 10기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT10G-03";
+                    case 2: return "eSIM-SMT10G-03";
+                    case 3: return "eSIM-SMT10G-03";
+                    case 4: return "eSIM-SMT10G-05";
+                    case 5: return "eSIM-SMT10G-05";
+                    case 6: return "eSIM-SMT10G-07";
+                    case 7: return "eSIM-SMT10G-07";
+                    case 8: return "eSIM-SMT10G-10";
+                    case 9: return "eSIM-SMT10G-10";
+                    case 10: return "eSIM-SMT10G-10";
+                    case 15: return "eSIM-SMT10G-15";
+                    case 20: return "eSIM-SMT10G-30";
+                    case 30: return "eSIM-SMT10G-30";
+                }
+            }
+            
+            // 싱가폴 5G 총 20기가 후 무제한(저속) 상품들 (SMT20G)
+            if (productName.contains("총 20기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT20G-03";
+                    case 2: return "eSIM-SMT20G-03";
+                    case 3: return "eSIM-SMT20G-03";
+                    case 4: return "eSIM-SMT20G-05";
+                    case 5: return "eSIM-SMT20G-05";
+                    case 6: return "eSIM-SMT20G-07";
+                    case 7: return "eSIM-SMT20G-07";
+                    case 8: return "eSIM-SMT20G-10";
+                    case 9: return "eSIM-SMT20G-10";
+                    case 10: return "eSIM-SMT20G-10";
+                    case 15: return "eSIM-SMT20G-15";
+                    case 20: return "eSIM-SMT20G-30";
+                    case 30: return "eSIM-SMT20G-30";
+                }
+            }
+            
+            // 싱가폴 5G 총 30기가 후 무제한(저속) 상품들 (SMT30G)
+            if (productName.contains("총 30기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-SMT30G-03";
+                    case 2: return "eSIM-SMT30G-03";
+                    case 3: return "eSIM-SMT30G-03";
+                    case 4: return "eSIM-SMT30G-05";
+                    case 5: return "eSIM-SMT30G-05";
+                    case 6: return "eSIM-SMT30G-07";
+                    case 7: return "eSIM-SMT30G-07";
+                    case 8: return "eSIM-SMT30G-10";
+                    case 9: return "eSIM-SMT30G-10";
+                    case 10: return "eSIM-SMT30G-10";
+                    case 15: return "eSIM-SMT30G-15";
+                    case 20: return "eSIM-SMT30G-30";
+                    case 30: return "eSIM-SMT30G-30";
+                }
             }
         }
         
-        if (productName.contains("총 30기가")) {
-            switch (day) {
-                case 3: return "eSIM-VNT30G-03";
-                case 7: return "eSIM-VNT30G-07";
-                case 10: return "eSIM-VNT30G-10";
-                case 15: return "eSIM-VNT30G-15";
-                case 30: return "eSIM-VNT30G-30";
+        // 홍마 상품들
+        if (productName.contains("홍마") || productName.contains("HM")) {
+            // 홍마 5G 매일 1기가 후 무제한(저속) 상품들 (HM1G)
+            if (productName.contains("매일 1기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HM1G-01";
+                    case 2: return "eSIM-HM1G-03";
+                    case 3: return "eSIM-HM1G-03";
+                    case 4: return "eSIM-HM1G-05";
+                    case 5: return "eSIM-HM1G-05";
+                    case 6: return "eSIM-HM1G-07";
+                    case 7: return "eSIM-HM1G-07";
+                    case 8: return "eSIM-HM1G-10";
+                    case 9: return "eSIM-HM1G-10";
+                    case 10: return "eSIM-HM1G-10";
+                    case 15: return "eSIM-HM1G-15";
+                    case 20: return "eSIM-HM1G-20";
+                    case 30: return "eSIM-HM1G-30";
+                }
+            }
+            
+            // 홍마 5G 매일 2기가 후 무제한(저속) 상품들 (HM2G)
+            if (productName.contains("매일 2기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HM2G-01";
+                    case 2: return "eSIM-HM2G-03";
+                    case 3: return "eSIM-HM2G-03";
+                    case 4: return "eSIM-HM2G-05";
+                    case 5: return "eSIM-HM2G-05";
+                    case 6: return "eSIM-HM2G-07";
+                    case 7: return "eSIM-HM2G-07";
+                    case 8: return "eSIM-HM2G-10";
+                    case 9: return "eSIM-HM2G-10";
+                    case 10: return "eSIM-HM2G-10";
+                    case 15: return "eSIM-HM2G-15";
+                    case 20: return "eSIM-HM2G-20";
+                    case 30: return "eSIM-HM2G-30";
+                }
+            }
+            
+            // 홍마 5G 매일 3기가 후 무제한(저속) 상품들 (HM3G)
+            if (productName.contains("매일 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HM3G-01";
+                    case 2: return "eSIM-HM3G-03";
+                    case 3: return "eSIM-HM3G-03";
+                    case 4: return "eSIM-HM3G-05";
+                    case 5: return "eSIM-HM3G-05";
+                    case 6: return "eSIM-HM3G-07";
+                    case 7: return "eSIM-HM3G-07";
+                    case 8: return "eSIM-HM3G-10";
+                    case 9: return "eSIM-HM3G-10";
+                    case 10: return "eSIM-HM3G-10";
+                    case 15: return "eSIM-HM3G-15";
+                    case 20: return "eSIM-HM3G-20";
+                    case 30: return "eSIM-HM3G-30";
+                }
+            }
+            
+            // 홍마 LTE 무제한 상품들 (HMMAX)
+            if (productName.contains("LTE 무제한") && productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-HMMAX-01";
+                    case 2: return "eSIM-HMMAX-03";
+                    case 3: return "eSIM-HMMAX-03";
+                    case 4: return "eSIM-HMMAX-05";
+                    case 5: return "eSIM-HMMAX-05";
+                    case 6: return "eSIM-HMMAX-07";
+                    case 7: return "eSIM-HMMAX-07";
+                    case 8: return "eSIM-HMMAX-10";
+                    case 9: return "eSIM-HMMAX-10";
+                    case 10: return "eSIM-HMMAX-10";
+                    case 15: return "eSIM-HMMAX-15";
+                    case 20: return "eSIM-HMMAX-20";
+                    case 30: return "eSIM-HMMAX-30";
+                }
+            }
+            
+            // 홍마 5G 속도 무제한 상품들 (HM10M)
+            if (productName.contains("5G 속도 무제한") && productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-HM10M-01";
+                    case 2: return "eSIM-HM10M-03";
+                    case 3: return "eSIM-HM10M-03";
+                    case 4: return "eSIM-HM10M-05";
+                    case 5: return "eSIM-HM10M-05";
+                    case 6: return "eSIM-HM10M-07";
+                    case 7: return "eSIM-HM10M-07";
+                    case 8: return "eSIM-HM10M-10";
+                    case 9: return "eSIM-HM10M-10";
+                    case 10: return "eSIM-HM10M-10";
+                    case 15: return "eSIM-HM10M-15";
+                    case 20: return "eSIM-HM10M-20";
+                    case 30: return "eSIM-HM10M-30";
+                }
+            }
+            
+            // 홍마 5G 총 3기가 이후 무제한(저속) 상품들 (HMT3G)
+            if (productName.contains("총 3기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HMT3G-03";
+                    case 2: return "eSIM-HMT3G-03";
+                    case 3: return "eSIM-HMT3G-03";
+                    case 4: return "eSIM-HMT3G-05";
+                    case 5: return "eSIM-HMT3G-05";
+                    case 6: return "eSIM-HMT3G-07";
+                    case 7: return "eSIM-HMT3G-07";
+                    case 8: return "eSIM-HMT3G-10";
+                    case 9: return "eSIM-HMT3G-10";
+                    case 10: return "eSIM-HMT3G-10";
+                    case 15: return "eSIM-HMT3G-15";
+                    case 20: return "eSIM-HMT3G-30";
+                    case 30: return "eSIM-HMT3G-30";
+                }
+            }
+            
+            // 홍마 5G 총 5기가 이후 무제한(저속) 상품들 (HMT5G)
+            if (productName.contains("총 5기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HMT5G-03";
+                    case 2: return "eSIM-HMT5G-03";
+                    case 3: return "eSIM-HMT5G-03";
+                    case 4: return "eSIM-HMT5G-05";
+                    case 5: return "eSIM-HMT5G-05";
+                    case 6: return "eSIM-HMT5G-07";
+                    case 7: return "eSIM-HMT5G-07";
+                    case 8: return "eSIM-HMT5G-10";
+                    case 9: return "eSIM-HMT5G-10";
+                    case 10: return "eSIM-HMT5G-10";
+                    case 15: return "eSIM-HMT5G-15";
+                    case 20: return "eSIM-HMT5G-30";
+                    case 30: return "eSIM-HMT5G-30";
+                }
+            }
+            
+            // 홍마 5G 총 10기가 이후 무제한(저속) 상품들 (HMT10G)
+            if (productName.contains("총 10기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HMT10G-03";
+                    case 2: return "eSIM-HMT10G-03";
+                    case 3: return "eSIM-HMT10G-03";
+                    case 4: return "eSIM-HMT10G-05";
+                    case 5: return "eSIM-HMT10G-05";
+                    case 6: return "eSIM-HMT10G-07";
+                    case 7: return "eSIM-HMT10G-07";
+                    case 8: return "eSIM-HMT10G-10";
+                    case 9: return "eSIM-HMT10G-10";
+                    case 10: return "eSIM-HMT10G-10";
+                    case 15: return "eSIM-HMT10G-15";
+                    case 20: return "eSIM-HMT10G-30";
+                    case 30: return "eSIM-HMT10G-30";
+                }
+            }
+            
+            // 홍마 5G 총 20기가 이후 무제한(저속) 상품들 (HMT20G)
+            if (productName.contains("총 20기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HMT20G-03";
+                    case 2: return "eSIM-HMT20G-03";
+                    case 3: return "eSIM-HMT20G-03";
+                    case 4: return "eSIM-HMT20G-05";
+                    case 5: return "eSIM-HMT20G-05";
+                    case 6: return "eSIM-HMT20G-07";
+                    case 7: return "eSIM-HMT20G-07";
+                    case 8: return "eSIM-HMT20G-10";
+                    case 9: return "eSIM-HMT20G-10";
+                    case 10: return "eSIM-HMT20G-10";
+                    case 15: return "eSIM-HMT20G-15";
+                    case 20: return "eSIM-HMT20G-30";
+                    case 30: return "eSIM-HMT20G-30";
+                }
+            }
+            
+            // 홍마 5G 총 30기가 이후 무제한(저속) 상품들 (HMT30G)
+            if (productName.contains("총 30기가") && productName.contains("무제한")) {
+                switch (day) {
+                    case 1: return "eSIM-HMT30G-03";
+                    case 2: return "eSIM-HMT30G-03";
+                    case 3: return "eSIM-HMT30G-03";
+                    case 4: return "eSIM-HMT30G-05";
+                    case 5: return "eSIM-HMT30G-05";
+                    case 6: return "eSIM-HMT30G-07";
+                    case 7: return "eSIM-HMT30G-07";
+                    case 8: return "eSIM-HMT30G-10";
+                    case 9: return "eSIM-HMT30G-10";
+                    case 10: return "eSIM-HMT30G-10";
+                    case 15: return "eSIM-HMT30G-15";
+                    case 20: return "eSIM-HMT30G-30";
+                    case 30: return "eSIM-HMT30G-30";
+                }
             }
         }
         
-        if (productName.contains("총 50기가")) {
-            switch (day) {
-                case 3: return "eSIM-VNT50G-03";
-                case 5: return "eSIM-VNT50G-05";
-                case 7: return "eSIM-VNT50G-07";
-                case 15: return "eSIM-VNT50G-15";
-                case 30: return "eSIM-VNT50G-30";
+        // 미국 상품들
+        if (productName.contains("미국") || productName.contains("USA")) {
+            // 미국 5G 매일 1기가 후 무제한(저속) 상품들 (USA1G)
+            if (productName.contains("매일 1기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USA1G-01";
+                    case 2: return "eSIM-USA1G-03";
+                    case 3: return "eSIM-USA1G-03";
+                    case 4: return "eSIM-USA1G-05";
+                    case 5: return "eSIM-USA1G-05";
+                    case 6: return "eSIM-USA1G-07";
+                    case 7: return "eSIM-USA1G-07";
+                    case 8: return "eSIM-USA1G-10";
+                    case 9: return "eSIM-USA1G-10";
+                    case 10: return "eSIM-USA1G-10";
+                    case 15: return "eSIM-USA1G-15";
+                    case 20: return "eSIM-USA1G-20";
+                    case 30: return "eSIM-USA1G-30";
+                }
+            }
+            
+            // 미국 5G 매일 2기가 후 무제한(저속) 상품들 (USA2G)
+            if (productName.contains("매일 2기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USA2G-01";
+                    case 2: return "eSIM-USA2G-03";
+                    case 3: return "eSIM-USA2G-03";
+                    case 4: return "eSIM-USA2G-05";
+                    case 5: return "eSIM-USA2G-05";
+                    case 6: return "eSIM-USA2G-07";
+                    case 7: return "eSIM-USA2G-07";
+                    case 8: return "eSIM-USA2G-10";
+                    case 9: return "eSIM-USA2G-10";
+                    case 10: return "eSIM-USA2G-10";
+                    case 15: return "eSIM-USA2G-15";
+                    case 20: return "eSIM-USA2G-20";
+                    case 30: return "eSIM-USA2G-30";
+                }
+            }
+            
+            // 미국 5G 매일 3기가 후 무제한(저속) 상품들 (USA3G)
+            if (productName.contains("매일 3기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USA3G-01";
+                    case 2: return "eSIM-USA3G-03";
+                    case 3: return "eSIM-USA3G-03";
+                    case 4: return "eSIM-USA3G-05";
+                    case 5: return "eSIM-USA3G-05";
+                    case 6: return "eSIM-USA3G-07";
+                    case 7: return "eSIM-USA3G-07";
+                    case 8: return "eSIM-USA3G-10";
+                    case 9: return "eSIM-USA3G-10";
+                    case 10: return "eSIM-USA3G-10";
+                    case 15: return "eSIM-USA3G-15";
+                    case 20: return "eSIM-USA3G-20";
+                    case 30: return "eSIM-USA3G-30";
+                }
+            }
+            
+            // 미국 LTE 속도 무제한 상품들 (USAMAX)
+            if (productName.contains("LTE 속도 무제한") || productName.contains("BEST")) {
+                switch (day) {
+                    case 1: return "eSIM-USAMAX-01";
+                    case 2: return "eSIM-USAMAX-03";
+                    case 3: return "eSIM-USAMAX-03";
+                    case 4: return "eSIM-USAMAX-05";
+                    case 5: return "eSIM-USAMAX-05";
+                    case 6: return "eSIM-USAMAX-07";
+                    case 7: return "eSIM-USAMAX-07";
+                    case 8: return "eSIM-USAMAX-10";
+                    case 9: return "eSIM-USAMAX-10";
+                    case 10: return "eSIM-USAMAX-10";
+                    case 15: return "eSIM-USAMAX-15";
+                    case 20: return "eSIM-USAMAX-20";
+                    case 30: return "eSIM-USAMAX-30";
+                }
+            }
+            
+            // 미국 5G 총 5기가 후 무제한(저속) 상품들 (USAT5G)
+            if (productName.contains("총 5기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USAT5G-03";
+                    case 2: return "eSIM-USAT5G-03";
+                    case 3: return "eSIM-USAT5G-03";
+                    case 4: return "eSIM-USAT5G-05";
+                    case 5: return "eSIM-USAT5G-05";
+                    case 6: return "eSIM-USAT5G-07";
+                    case 7: return "eSIM-USAT5G-07";
+                    case 8: return "eSIM-USAT5G-10";
+                    case 9: return "eSIM-USAT5G-10";
+                    case 10: return "eSIM-USAT5G-10";
+                    case 15: return "eSIM-USAT5G-15";
+                    case 20: return "eSIM-USAT5G-30";
+                    case 30: return "eSIM-USAT5G-30";
+                }
+            }
+            
+            // 미국 5G 총 10기가 후 무제한(저속) 상품들 (USAT10G)
+            if (productName.contains("총 10기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USAT10G-03";
+                    case 2: return "eSIM-USAT10G-03";
+                    case 3: return "eSIM-USAT10G-03";
+                    case 4: return "eSIM-USAT10G-05";
+                    case 5: return "eSIM-USAT10G-05";
+                    case 6: return "eSIM-USAT10G-07";
+                    case 7: return "eSIM-USAT10G-07";
+                    case 8: return "eSIM-USAT10G-10";
+                    case 9: return "eSIM-USAT10G-10";
+                    case 10: return "eSIM-USAT10G-10";
+                    case 15: return "eSIM-USAT10G-15";
+                    case 20: return "eSIM-USAT10G-30";
+                    case 30: return "eSIM-USAT10G-30";
+                }
+            }
+            
+            // 미국 5G 총 20기가 후 무제한(저속) 상품들 (USAT20G)
+            if (productName.contains("총 20기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USAT20G-03";
+                    case 2: return "eSIM-USAT20G-03";
+                    case 3: return "eSIM-USAT20G-03";
+                    case 4: return "eSIM-USAT20G-05";
+                    case 5: return "eSIM-USAT20G-05";
+                    case 6: return "eSIM-USAT20G-07";
+                    case 7: return "eSIM-USAT20G-07";
+                    case 8: return "eSIM-USAT20G-10";
+                    case 9: return "eSIM-USAT20G-10";
+                    case 10: return "eSIM-USAT20G-10";
+                    case 15: return "eSIM-USAT20G-15";
+                    case 20: return "eSIM-USAT20G-30";
+                    case 30: return "eSIM-USAT20G-30";
+                }
+            }
+            
+            // 미국 5G 총 30기가 후 무제한(저속) 상품들 (USAT30G)
+            if (productName.contains("총 30기가") && productName.contains("무제한(저속)")) {
+                switch (day) {
+                    case 1: return "eSIM-USAT30G-03";
+                    case 2: return "eSIM-USAT30G-03";
+                    case 3: return "eSIM-USAT30G-03";
+                    case 4: return "eSIM-USAT30G-05";
+                    case 5: return "eSIM-USAT30G-05";
+                    case 6: return "eSIM-USAT30G-07";
+                    case 7: return "eSIM-USAT30G-07";
+                    case 8: return "eSIM-USAT30G-10";
+                    case 9: return "eSIM-USAT30G-10";
+                    case 10: return "eSIM-USAT30G-10";
+                    case 15: return "eSIM-USAT30G-15";
+                    case 20: return "eSIM-USAT30G-30";
+                    case 30: return "eSIM-USAT30G-30";
+                }
             }
         }
+        
         
         // 매칭되지 않는 경우 기본값
         System.out.println("매칭되지 않는 상품: " + productName + " (일수: " + day + ")");

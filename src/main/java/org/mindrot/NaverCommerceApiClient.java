@@ -10,13 +10,36 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.sql.*;
 
 public class NaverCommerceApiClient {
+
+    private static String DISPATCH_API_URL = "https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders/dispatch";
     
     private static final String OAUTH_URL = "https://api.commerce.naver.com/external/v1/oauth2/token";
     private static final String ORDER_API_URL = "https://api.commerce.naver.com/external/v1/pay-order/seller/product-orders";
     
     public static void main(String[] args) {
+        try {
+            // 명령행 인수 확인
+            if (args.length > 0 && "processDispatchOrders".equals(args[0])) {
+                // 발송 처리 모드
+                processDispatchOrders();
+            } else {
+                // 기존 주문 조회 모드
+                processOrderInquiry();
+            }
+            
+        } catch (Exception e) {
+            log("오류 발생: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 기존 주문 조회 처리 로직
+     */
+    private static void processOrderInquiry() {
         try {
             // 로그 파일 초기화
             initializeLogFile();
@@ -533,6 +556,207 @@ public class NaverCommerceApiClient {
             // 인코딩 실패 시 기본값 반환
             return "2025-01-26T00:00:00.000%2B09:00";
         }
+    }
+    
+    /**
+     * 발송 처리할 주문들을 조회하고 발송 처리합니다.
+     * dispatchStatus = 0인 주문들을 처리
+     */
+    public static void processDispatchOrders() {
+        try {
+            // 로그 파일 초기화
+            initializeLogFile();
+            
+            log("=== 발송 처리 시작 ===");
+            
+            // 1. SignatureGenerator로 필요한 값들 생성
+            String clientId = "7gZetAuSj34sFFbx0Yj3OJ";
+            String clientSecret = "$2a$04$wWsKI6s9oluIDTgYnP0Y0e";
+            Long timestamp = System.currentTimeMillis();
+            
+            String signature = SignatureGenerator.generateSignature(clientId, clientSecret, timestamp);
+            
+            // 2. OAuth 토큰 발급
+            String accessToken = getAccessToken(clientId, timestamp, signature);
+            
+            if (accessToken != null) {
+                log("Access Token 발급 성공: " + accessToken);
+                
+                // 3. 발송 처리할 주문들 조회 (dispatchStatus = 0)
+                List<String> dispatchOrderIds = getDispatchPendingOrderIds();
+                
+                if (!dispatchOrderIds.isEmpty()) {
+                    log("발송 처리할 주문 수: " + dispatchOrderIds.size());
+                    
+                    for (String productOrderId : dispatchOrderIds) {
+                        try {
+                            log("발송 처리 중: productOrderId=" + productOrderId);
+                            
+                            // 발송 상태를 1(발송중)으로 변경
+                            updateDispatchStatus(productOrderId, 1);
+                            
+                            // 네이버에 발송 처리 요청 (QR 발송 완료)
+                            boolean success = dispatchProductOrderForQR(accessToken, productOrderId);
+                            
+                            if (success) {
+                                // 발송 상태를 2(발송완료)로 변경
+                                updateDispatchStatus(productOrderId, 2);
+                                log("발송 처리 성공: " + productOrderId);
+                            } else {
+                                // 발송 상태를 0(발송대기)로 되돌림
+                                updateDispatchStatus(productOrderId, 0);
+                                log("발송 처리 실패: " + productOrderId);
+                            }
+                            
+                            // API 호출 간격 조절
+                            Thread.sleep(1000);
+                            
+                        } catch (Exception e) {
+                            log("발송 처리 중 오류: " + productOrderId + " - " + e.getMessage());
+                            // 오류 발생 시 상태를 0으로 되돌림
+                            updateDispatchStatus(productOrderId, 0);
+                        }
+                    }
+                } else {
+                    log("발송 처리할 주문이 없습니다.");
+                }
+                
+            } else {
+                log("Access Token 발급 실패");
+            }
+            
+            log("=== 발송 처리 완료 ===");
+            
+        } catch (Exception e) {
+            log("발송 처리 오류 발생: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 발송 처리할 주문 ID들을 데이터베이스에서 조회합니다.
+     * 조건: dispatchStatus = 0 (발송대기)
+     */
+    private static List<String> getDispatchPendingOrderIds() {
+        List<String> orderIds = new ArrayList<>();
+        
+        try (Connection conn = MySQLConfig.getConnection()) {
+            String sql = "SELECT productOrderId FROM ringtalk.user " +
+                        "WHERE dispatchStatus = 0 " +
+                        "ORDER BY created_at ASC " +
+                        "LIMIT 10";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(sql);
+                 ResultSet rs = pstmt.executeQuery()) {
+                
+                while (rs.next()) {
+                    orderIds.add(rs.getString("productOrderId"));
+                }
+            }
+            
+        } catch (SQLException e) {
+            log("발송 대기 주문 조회 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        return orderIds;
+    }
+    
+    /**
+     * QR 발송 완료된 주문을 네이버에 발송 처리 요청합니다.
+     * deliveryMethod: "NOTHING" 사용
+     */
+    private static boolean dispatchProductOrderForQR(String accessToken, String productOrderId) {
+        try {
+            URL url = new URL(DISPATCH_API_URL);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            
+            // 요청 설정
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + accessToken);
+            conn.setDoOutput(true);
+            
+            // 현재 시간을 ISO 8601 형식으로 생성
+            String currentDateTime = getCurrentDateTimeISO();
+            
+            // 요청 바디 구성 (QR 발송 완료)
+            String requestBody = String.format(
+                "{\n" +
+                "  \"dispatchProductOrders\": [\n" +
+                "    {\n" +
+                "      \"productOrderId\": \"%s\",\n" +
+                "      \"deliveryMethod\": \"NOTHING\",\n" +
+                "      \"dispatchDate\": \"%s\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}",
+                productOrderId,
+                currentDateTime
+            );
+            
+            log("발송 처리 요청 바디: " + requestBody);
+            
+            // 요청 전송
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = requestBody.getBytes(StandardCharsets.UTF_8.name());
+                os.write(input, 0, input.length);
+            }
+            
+            // 응답 처리
+            int responseCode = conn.getResponseCode();
+            String response;
+            if (responseCode == 200) {
+                response = readResponse(conn.getInputStream());
+            } else {
+                response = readResponse(conn.getErrorStream());
+            }
+            
+            log("발송처리 응답 코드: " + responseCode);
+            log("발송처리 응답: " + response);
+            
+            return responseCode == 200;
+            
+        } catch (Exception e) {
+            log("발송처리 오류: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 발송 상태를 업데이트합니다.
+     * 0: 발송대기, 1: 발송중, 2: 발송완료
+     */
+    private static void updateDispatchStatus(String productOrderId, int status) {
+        try (Connection conn = MySQLConfig.getConnection()) {
+            String sql = "UPDATE ringtalk.user SET dispatchStatus = ?, updated_at = NOW() WHERE productOrderId = ?";
+            
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setInt(1, status);
+                pstmt.setString(2, productOrderId);
+                
+                int affectedRows = pstmt.executeUpdate();
+                if (affectedRows > 0) {
+                    String statusText = status == 0 ? "발송대기" : status == 1 ? "발송중" : "발송완료";
+                    log("발송 상태 업데이트 성공: " + productOrderId + " -> " + statusText);
+                } else {
+                    log("발송 상태 업데이트 실패: " + productOrderId + " - 해당 레코드를 찾을 수 없음");
+                }
+            }
+            
+        } catch (SQLException e) {
+            log("발송 상태 업데이트 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 현재 날짜와 시간을 ISO 8601 형식으로 반환합니다.
+     */
+    private static String getCurrentDateTimeISO() {
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Seoul"));
+        return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX"));
     }
     
     /**

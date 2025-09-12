@@ -6,7 +6,12 @@ const dbConfig = {
   user: 'dbeaver',
   password: '12345678',
   database: 'ringtalk',
-  port: 3306
+  port: 3306,
+  enableKeepAlive: true,
+  // 연결 풀 설정 추가
+  acquireTimeout: 60000,
+  timeout: 60000,
+  reconnect: true
 };
 
 export class MySQLClient {
@@ -17,6 +22,15 @@ export class MySQLClient {
 
   async connect() {
     try {
+      // 기존 연결이 있으면 정리
+      if (this.connection) {
+        try {
+          await this.connection.end();
+        } catch (error) {
+          console.log('기존 연결 정리 중 오류 (무시됨):', error.message);
+        }
+      }
+      
       this.connection = await mysql.createConnection(dbConfig);
       console.log('MySQL 연결 성공');
     } catch (error) {
@@ -27,16 +41,37 @@ export class MySQLClient {
 
   async disconnect() {
     if (this.connection) {
-      await this.connection.end();
-      console.log('MySQL 연결 종료');
+      try {
+        await this.connection.end();
+        console.log('MySQL 연결 종료');
+      } catch (error) {
+        console.log('연결 종료 중 오류 (무시됨):', error.message);
+      } finally {
+        this.connection = null;
+      }
+    }
+  }
+
+  // 연결 상태 확인 및 재연결
+  async ensureConnection() {
+    try {
+      // 연결이 없거나 끊어진 경우
+      if (!this.connection) {
+        await this.connect();
+        return;
+      }
+
+      // 연결 상태 확인
+      await this.connection.ping();
+    } catch (error) {
+      console.log('연결 상태 확인 실패, 재연결 시도:', error.message);
+      await this.connect();
     }
   }
 
   async updateSnPinByOrderTid(orderTid, snPin) {
     try {
-      if (!this.connection) {
-        await this.connect();
-      }
+      await this.ensureConnection();
 
       const query = `
         UPDATE user 
@@ -59,6 +94,31 @@ export class MySQLClient {
     }
   }
 
+  async updateSnCodeByOrderTid(orderTid, snCode) {
+    try {
+      await this.ensureConnection();
+
+      const query = `
+        UPDATE user 
+        SET snCode = ?, 
+            updated_at = NOW() 
+        WHERE orderTid = ?
+      `;
+
+      const [result] = await this.connection.execute(query, [snCode, orderTid]);
+      
+      if (result.affectedRows === 0) {
+        throw new Error(`orderTid ${orderTid}에 해당하는 주문을 찾을 수 없습니다.`);
+      }
+
+      console.log(`orderTid ${orderTid}의 snCode가 ${snCode}으로 업데이트되었습니다.`);
+      return result;
+    } catch (error) {
+      console.error('snCode 업데이트 실패:', error);
+      throw error;
+    }
+  }
+
   async updateQrCodeByTransId(snPinString, qrCodeString) {
     try {
       // 파라미터 검증
@@ -69,9 +129,7 @@ export class MySQLClient {
         throw new Error('qrCode가 필요합니다.');
       }
 
-      if (!this.connection) {
-        await this.connect();
-      }
+      await this.ensureConnection();
 
       // | 구분자로 분리하고 빈 문자열 제거
       const snPins = snPinString.split('|').filter(sn => sn.trim());
@@ -149,7 +207,7 @@ export class MySQLClient {
       try {
         // 먼저 전체 snPin 문자열로 사용자 정보 조회
         let userQuery = `
-          SELECT orderId, ordererTel, ordererName, productName FROM user WHERE snPin = ?
+          SELECT orderId, ordererTel, ordererName, productName, day FROM user WHERE snPin = ?
         `;
         let [userRows] = await this.connection.execute(userQuery, [snPinString]);
         

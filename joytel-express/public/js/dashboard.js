@@ -66,6 +66,7 @@ function updateTable(orders) {
             <td>${order.productName || '-'}</td>
             <td>${order.day || '-'}일</td>
             <td>${order.quantity || '-'}</td>
+            <td>${order.snCode ? order.snCode.replace(/\|/g, '<br>') : '-'}</td>
             <td>${order.QR ? `<a href="${order.QR}" target="_blank" class="qr-link">QR 보기</a>` : '<span class="no-qr">없음</span>'}</td>
             <td>${getStatusBadge(order.QR)}</td>
             <td>${formatDateTime(order.created_at)}</td>
@@ -82,13 +83,33 @@ function getStatusBadge(qr) {
 }
 
 function formatPhoneNumber(tel) {
-    const telStr = String(tel);
+    let telStr = String(tel);
+    
+    // 숫자만 추출
+    telStr = telStr.replace(/[^0-9]/g, '');
+    
+    // 맨 앞에 0이 없으면 추가 (한국 전화번호 형식)
+    if (telStr.length > 0 && !telStr.startsWith('0')) {
+        telStr = '0' + telStr;
+    }
+    
+    // 길이에 따라 처리
     if (telStr.length === 11) {
+        // 11자리: 010-1234-5678 형식
         return telStr.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
     } else if (telStr.length === 10) {
+        // 10자리: 010-123-4567 형식
         return telStr.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+    } else if (telStr.length === 9) {
+        // 9자리: 010-123-456 형식
+        return telStr.replace(/(\d{3})(\d{3})(\d{3})/, '$1-$2-$3');
+    } else if (telStr.length === 8) {
+        // 8자리: 010-1234 형식
+        return telStr.replace(/(\d{3})(\d{4})/, '$1-$2');
+    } else {
+        // 그 외: 원본 반환
+        return telStr;
     }
-    return telStr;
 }
 
 function formatDateTime(dateStr) {
@@ -115,14 +136,54 @@ function filterTable() {
     updateTable(filteredOrders);
 }
 
-// 페이지 로드 시 데이터 로딩
-document.addEventListener('DOMContentLoaded', function() {
+// 페이지 로드 시 데이터 로딩 및 사용자 정보 확인
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM 로드 완료, 데이터 로딩 시작');
+    
+    // 사용자 정보 확인
+    try {
+        const authResponse = await fetch('/api/auth/status');
+        const authData = await authResponse.json();
+        
+        if (authData.isAuthenticated && authData.username) {
+            document.getElementById('userInfo').textContent = authData.username;
+        }
+    } catch (error) {
+        console.error('사용자 정보 확인 실패:', error);
+    }
+    
     loadData();
 });
 
 // 5분마다 자동 새로고침
 setInterval(loadData, 5 * 60 * 1000);
 
+// 로그아웃 함수
+async function logout() {
+    if (confirm('정말 로그아웃 하시겠습니까?')) {
+        try {
+            const response = await fetch('/api/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // 로그아웃 성공 시 로그인 페이지로 이동
+                window.location.href = '/login';
+            } else {
+                alert('로그아웃에 실패했습니다.');
+            }
+        } catch (error) {
+            console.error('로그아웃 오류:', error);
+            alert('로그아웃 중 오류가 발생했습니다.');
+        }
+    }
+}
+
 // 전역 함수로 노출 (디버깅용)
 window.loadData = loadData;
+window.logout = logout;
