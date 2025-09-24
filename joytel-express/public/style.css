@@ -36,26 +36,33 @@ html, body { height:100%; }
 }
 
 /* 페이지 전체 배경은 흰색 */
-html { background:#fff; }
+html { 
+  background:#fff; 
+  margin:0;
+  padding:0;
+}
 
 /* 레이아웃 */
 body{
   background:transparent;
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:center;
   font-family:system-ui, -apple-system, Segoe UI, Roboto, Pretendard, sans-serif;
   color:var(--ink);
+  min-height:100vh;
+  padding:0;
+  margin:0;
 }
 
 /* === LAYOUT === */
 .container{
-  margin-top:300px;
+  margin:0 auto 50px auto;
   width:450px;
   max-width:100vw;
 
   /* 컨테이너 안에서만 배경 이미지 */
-  background: url("assets/assetsbg.SVG") no-repeat center top / cover;
+  background: url("assets/china.png") no-repeat center top / cover;
   /* 파일에 확장자가 없으면 위 줄을
      background: url("assets/assetsbg") no-repeat center top / cover;
      로 바꿔 사용하세요. */
@@ -65,6 +72,7 @@ body{
   border:1px solid var(--line);
   overflow:hidden;
   position:relative;
+  transform: translateY(-25px);
 }
 
 .header{
@@ -84,10 +92,17 @@ body{
   font-size:var(--caption);
   font-weight:700;
   padding:6px 10px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.badge:hover{
+  opacity: 0.8;
 }
 
 /* === BANNER === */
-.banner{ padding:10px var(--gap-4) 0; }
+.banner{ padding:4px var(--gap-4) 0; }
 .banner h2{ font-size:var(--h2); font-weight:800; letter-spacing:.3px; }
 .banner small{ font-size:var(--body); color:var(--ink-2); margin-left:4px; }
 
@@ -134,34 +149,36 @@ body{
   font-weight: 700;
   font-size: 25px;
   color: #173A8B;
+  transform: translateY(-2px);
 
   /* ← 여기만 추가해서 오른쪽으로 Npx 이동 */
   margin-left: 6px;   /* 4~12px 사이에서 취향껏 */
-margin-top: -6px;     /* 아래로 6px */
+margin-top: 0px;     /* 아래로 6px */
 }
 
 .glass .sub{
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Pretendard, sans-serif;
-  font-weight: 400;                /* Regular */
+  font-weight: 500 !important;                /* Medium */
   color: #0B2A55;                  /* 텍스트 색상 */
   font-size: var(--body);          /* 기존 바디 크기 유지(원하면 14~16px로 바꿔도 OK) */
   line-height: 1.5;
-
   /* 위치 미세 조정: 위 변수값으로 조절 */
-  transform: translate(8px, 8px);
+  transform: translate(8px, 7px);
 }
-.qr{ width:120px; height:120px; border-radius:10px; border:1px solid var(--line); }
+.qr{ width:120px; height:120px; border-radius:10px; border:1px solid var(--line); transform: translateX(-4px); }
 
 .info{
   font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, Pretendard, sans-serif;
   transform: translate(10px, 8px);  /* ← 필요 시 px 값 조정 */
+  font-size: 14px; /* 모든 요소의 기본 글자 크기 */
 }
 .info p{
-  margin: 8px 0;
+  margin: 6px 0;
   font-weight: 400;      /* Regular */
   color: #454545;        /* 값 색상 */
   line-height: 1.5;
   transform: translate(0px, 0px);
+  font-size: 14px; /* p 태그 글자 크기 */
 }
 .info p b{
   font-weight: 700;      /* Bold */
@@ -169,6 +186,7 @@ margin-top: -6px;     /* 아래로 6px */
   letter-spacing: .2px;
   margin-right: 4px;     /* 라벨과 값 사이 간격 */
   transform: translate(0px, 0px);
+  font-size: 14px; /* b 태그 글자 크기 */
 }
 
 .inputs{ margin-top:var(--gap-3); display:flex; flex-direction:column; gap:8px; }
@@ -183,7 +201,6 @@ margin-top: -6px;     /* 아래로 6px */
   padding:10px 12px;
 }
 
-.field .label{ font-size:var(--body); color:var(--ink-2); }
 
 .button{
   border:1px solid var(--line);
@@ -195,9 +212,56 @@ margin-top: -6px;     /* 아래로 6px */
 }
 .button:active{ transform:scale(.98); }
 
-.notice{ font-size:var(--caption); color:var(--muted); margin:10px 2px; }
+.notice{ 
+  font-size:var(--caption); 
+  color:var(--muted); 
+  margin:0px 2px 10px 2px; 
+  transform: translateY(-6px) !important; 
+}
 
 .data{ margin-top:var(--gap-2); }
+
+/* 통합된 데이터 프로그레스 바 */
+.data-progress-bar{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background:#3B7BA6;
+  border-radius:20px;
+  padding:6px 24px;
+  margin:8px auto 8px auto;
+  position:relative;
+  overflow:hidden;
+  width:100%;
+  max-width:400px;
+  transform: translateY(-12px);
+}
+
+.data-label{
+  color:#ffffff;
+  font-weight:600;
+  font-size:14px;
+  position:relative;
+  z-index:2;
+  margin-right:8px;
+}
+
+.data-value{
+  color:#ffffff;
+  font-weight:600;
+  font-size:14px;
+  position:relative;
+  z-index:2;
+  margin-right:8px;
+}
+
+.data-disclaimer{
+  font-size:9px;
+  color:#6b7280;
+  margin:2px 0 8px 0;
+  text-align:center;
+  transform: translateY(-13px);
+}
 
 .pill{
   display:flex;
@@ -210,19 +274,46 @@ margin-top: -6px;     /* 아래로 6px */
   font-size:var(--body);
 }
 
-.total{ margin-top:8px; font-size:var(--caption); color:var(--muted); }
+.total{ 
+  margin-top:8px; 
+  font-size:20px; 
+  color:var(--ink);
+  text-align:center;
+  font-weight:700 !important;
+  transform: translate(-4px, -10px);
+}
 
 .footer{
   text-align:center;
-  padding:14px;
-  background:#0b1b3b;
+  padding:20px 16px;
+  background:rgba(50,72,110,0.9) !important;
   color:#fff;
-  font-size:var(--caption);
+  font-size:14px;
+  border-radius:12px;
+  margin:14px 16px 10px 16px;
+  font-weight:500;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  position:relative;
+  transform: translateY(-4px);
+}
+
+.footer span:last-child{
+  transform: translateX(-2px);
+}
+
+.footer-logo{
+  position:absolute;
+  left:50%;
+  transform:translate(calc(-50% - 1px), 2px);
+  height:42px;
+  width:auto;
 }
 
 /* card는 이제 바깥 여백만 담당 */
 .card{
-  margin:12px var(--gap-4) var(--gap-4);
+  margin:6px var(--gap-4) var(--gap-4);
   background:transparent;
   border:none;
   padding:0;
@@ -230,7 +321,7 @@ margin-top: -6px;     /* 아래로 6px */
 
 /* 상단 유리(글래스) 박스 */
 .glass{
-  background:rgba(255,255,255,.95);
+  background:rgba(255,255,255,.9) !important;
   border:1px solid #E6E9F0;
   border-radius:18px;
   padding:16px;
@@ -256,8 +347,11 @@ margin-top: -6px;     /* 아래로 6px */
 /* 강조 문구 */
 .emph{
   text-align:center;
+  font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, Pretendard, sans-serif;
   font-weight:700;
+  font-size:13px;
   margin:8px 0 10px;
+  transform: translateY(0px) !important;
 }
 
 /* === Logo (img) === */
@@ -295,7 +389,7 @@ margin-top: -6px;     /* 아래로 6px */
 
 /* === Country title centered with flag emoji === */
 .banner{
-  padding: 10px var(--gap-4) 0;
+  padding: 4px var(--gap-4) 0;
   display: flex;
   justify-content: center;   /* 가운데 정렬 */
   align-items: center;
@@ -309,6 +403,7 @@ margin-top: -6px;     /* 아래로 6px */
   font-size: var(--h1);       /* 크게 */
   font-weight: 800;
   letter-spacing: .3px;
+  transform: translateY(-5px); /* 5픽셀 위로 이동 */
 }
 
 .banner .flag{
@@ -325,7 +420,7 @@ margin-top: -6px;     /* 아래로 6px */
 
 /* === Country title centered with SVG flag === */
 .banner{
-  padding: 10px var(--gap-4) 0;
+  padding: 4px var(--gap-4) 0;
   display: flex;
   justify-content: center;      /* 가운데 정렬 */
   align-items: center;
@@ -402,7 +497,7 @@ margin-top: -6px;     /* 아래로 6px */
 
 /* 아래 큰 패널(입력/버튼 묶음) */
 .panel{
-  background:#fff;
+  background:rgba(255,255,255,.9) !important;
   border:1px solid #E6E9F0;
   /* 위쪽 라운드는 없애고 아래만 둥글게 → 두 박스가 한 장처럼 보임 */
   border-radius: 0 0 18px 18px;
@@ -475,13 +570,15 @@ margin-top: -6px;     /* 아래로 6px */
 
 /* 상품명 한 줄만 위치 조정 */
 .info .product-line{
-  transform: translate(-1px, -3px); /* x, y (y만 바꾸면 위/아래) */
+  transform: translate(-1px, -4px); /* x, y (y만 바꾸면 위/아래) */
+  font-size: 14px; /* 글자 크기 통일 */
 }
 
 /* (선택) 라벨은 그대로 강조 유지 */
 .info .product-line b{
   font-weight: 700;
   color: #173A8B;
+  font-size: 14px; /* b 태그 글자 크기 통일 */
 }
 
 /* ===== 그룹/패널 기본 배치 ===== */

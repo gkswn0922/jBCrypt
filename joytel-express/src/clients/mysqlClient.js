@@ -135,15 +135,22 @@ export class MySQLClient {
       const snPins = snPinString.split('|').filter(sn => sn.trim());
       const qrCodes = qrCodeString.split('|').filter(qr => qr.trim());
 
-      console.log('QR 코드 업데이트 쿼리 실행:', { 
-        snPinCount: snPins.length, 
-        qrCodeCount: qrCodes.length,
-        snPins: snPins,
-        qrCodes: qrCodes
+      // 중복 제거된 QR 코드들만 필터링
+      const uniqueQrCodes = [...new Set(qrCodes)];
+      const filteredQrCodeString = uniqueQrCodes.join('|');
+
+      console.log('중복 제거된 QR 코드:', {
+        originalCount: qrCodes.length,
+        uniqueCount: uniqueQrCodes.length,
+        removedDuplicates: qrCodes.length - uniqueQrCodes.length
       });
 
-      // 필터링된 QR 코드들을 다시 |로 연결
-      const filteredQrCodeString = qrCodes.join('|');
+      console.log('QR 코드 업데이트 쿼리 실행:', { 
+        snPinCount: snPins.length, 
+        qrCodeCount: uniqueQrCodes.length,
+        snPins: snPins,
+        qrCodes: uniqueQrCodes
+      });
 
       // snPin 전체 문자열로 사용자 찾기 (| 구분자로 저장된 경우)
       const query = `
@@ -164,7 +171,7 @@ export class MySQLClient {
         
         for (let i = 0; i < snPins.length; i++) {
           const snPin = snPins[i];
-          const qrCode = qrCodes[i] || ''; // qrCode가 없는 경우 빈 문자열
+          const qrCode = uniqueQrCodes[i] || ''; // 중복 제거된 QR 코드 사용
 
           // LIKE 패턴으로 snPin이 포함된 레코드 찾기
           const individualQuery = `
@@ -207,7 +214,7 @@ export class MySQLClient {
       try {
         // 먼저 전체 snPin 문자열로 사용자 정보 조회
         let userQuery = `
-          SELECT orderId, ordererTel, ordererName, productName, day FROM user WHERE snPin = ?
+          SELECT kakaoSendYN, orderId, ordererTel, ordererName, productName, day FROM user WHERE snPin = ?
         `;
         let [userRows] = await this.connection.execute(userQuery, [snPinString]);
         
@@ -216,7 +223,7 @@ export class MySQLClient {
           const validSnPin = snPins.find(sn => sn.trim());
           if (validSnPin) {
             userQuery = `
-              SELECT orderId, ordererTel, ordererName, productName, day FROM user 
+              SELECT kakaoSendYN, orderId, ordererTel, ordererName, productName, day FROM user 
               WHERE snPin LIKE ? OR snPin LIKE ? OR snPin LIKE ? OR snPin = ?
             `;
             const likePatterns = [
@@ -235,20 +242,94 @@ export class MySQLClient {
           const phoneNumber = user.ordererTel;
           const productName = user.productName || 'eSIM 해외 데이터';
           const day = user.day || 1;
+          const kakaoSendYN = user.kakaoSendYN;
           
-          if (phoneNumber) {
+          // kakaoSendYN이 'N'이고 전화번호가 있는 경우만 메시지 전송
+          console.log('kakaoSendYN:', kakaoSendYN);
+          console.log('phoneNumber:', phoneNumber);
+          if (phoneNumber && kakaoSendYN === 'N') {
             console.log('BizPPurio API 호출 시작:', { 
               snPinCount: snPins.length,
-              qrCodeCount: qrCodes.length,
+              qrCodeCount: uniqueQrCodes.length,
               phoneNumber, 
               orderId, 
-              productName 
+              productName,
+              kakaoSendYN
             });
+
+            try {
+              const transIdQuery = `
+                SELECT transId FROM esim_progress_notifications WHERE qrCode = ?
+              `;
+              const [transIdRows] = await this.connection.execute(transIdQuery, [filteredQrCodeString]);
+              
+              if (transIdRows.length === 1) {
+                const transId = transIdRows[0].transId;
+                
+                // BizPPurio API 호출 (필터링된 QR 코드 문자열 사용)
+                await this.bizppurioClient.sendQrCodeMessage(transId, filteredQrCodeString, phoneNumber, orderId, productName, day);
+               
+                console.log('BizPPurio API 호출 완료');
+                
+                // QR 코드 개수와 quantity가 일치하는지 확인 후 kakaoSendYN을 'Y'로 업데이트
+                const quantityCheckQuery = `
+                  SELECT quantity, QR FROM user WHERE orderId = ?
+                `;
+                const [quantityRows] = await this.connection.execute(quantityCheckQuery, [orderId]);
+                
+                if (quantityRows.length > 0) {
+                  const userQuantity = quantityRows[0].quantity;
+                  const userQrCodes = quantityRows[0].QR;
+                  
+                  // QR 코드 개수 계산 (| 구분자로 분리)
+                  const qrCodeCount = userQrCodes ? userQrCodes.split('|').filter(qr => qr.trim()).length : 0;
+                  
+                  console.log('QR 코드 개수와 quantity 비교:', {
+                    orderId,
+                    qrCodeCount,
+                    userQuantity,
+                    isMatch: qrCodeCount === userQuantity
+                  });
+                  
+                  // QR 코드 개수와 quantity가 일치할 때만 업데이트
+                  if (qrCodeCount === userQuantity) {
+                    const updateQuery = `
+                      UPDATE user 
+                      SET kakaoSendYN = 'Y', updated_at = NOW() 
+                      WHERE orderId = ?
+                    `;
+                    
+                    const [updateResult] = await this.connection.execute(updateQuery, [orderId]);
+                    
+                    if (updateResult.affectedRows > 0) {
+                      console.log('QR 코드 개수와 quantity 일치, kakaoSendYN 업데이트 완료:', orderId);
+                    } else {
+                      console.warn('kakaoSendYN 업데이트 실패:', orderId);
+                    }
+                  } else {
+                    console.log('QR 코드 개수와 quantity 불일치로 kakaoSendYN 업데이트 건너뛰기:', {
+                      orderId,
+                      qrCodeCount,
+                      userQuantity
+                    });
+                  }
+                } else {
+                  console.warn('사용자 정보를 찾을 수 없음:', orderId);
+                }
+                
+              } else if (transIdRows.length === 0) {
+                console.log('transId를 찾을 수 없음:', filteredQrCodeString);
+              } else {
+                console.log('transId가 여러 개 발견됨, 건너뛰기:', filteredQrCodeString, '개수:', transIdRows.length);
+              }
+              
+            } catch (apiError) {
+              console.error('BizPPurio API 호출 실패:', apiError);
+              // API 호출 실패 시에도 kakaoSendYN은 업데이트하지 않음 (재시도 가능하도록)
+            }
             
-            // BizPPurio API 호출 (필터링된 QR 코드 문자열 사용)
-            await this.bizppurioClient.sendQrCodeMessage(filteredQrCodeString, phoneNumber, orderId, productName, day);
-           
-            console.log('BizPPurio API 호출 완료');
+          } else if (phoneNumber && kakaoSendYN === 'Y') {
+            console.log('이미 카카오톡 메시지가 전송되어 건너뛰기:', orderId);
           } else {
             console.warn('사용자 전화번호가 없어 BizPPurio API 호출을 건너뜁니다.');
           }

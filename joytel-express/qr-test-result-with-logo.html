@@ -1,0 +1,102 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR 코드 + 로고 테스트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .title {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .qr-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .qr-image {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            background: white;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .info h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .code {
+            font-family: monospace;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 3px;
+            word-break: break-all;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">🎯 QR 코드 + 로고 테스트 결과</h1>
+        
+        <div class="qr-section">
+            <h2>생성된 QR 코드 (로고 포함)</h2>
+            <img src="data:image/png;base64,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" alt="QR 코드 + 로고" class="qr-image">
+        </div>
+        
+        <div class="info">
+            <h3>📋 테스트 정보</h3>
+            <p><strong>활성화 코드:</strong></p>
+            <div class="code">LPA:1$rsp.demo.com$0913F6176020B7C603E3R42B61P686D3</div>
+            <p><strong>로고 파일:</strong> E:\jBCrypt\joytel-express\public\assets\logo-ringtalk.png</p>
+            <p><strong>생성 시간:</strong> 2025. 9. 12. 오후 12:56:48</p>
+        </div>
+        
+        <div class="success">
+            ✅ QR 코드에 RingTalk 로고가 성공적으로 적용되었습니다!
+        </div>
+        
+        <div style="margin-top: 20px; padding: 15px; background: #d4edda; border-radius: 5px;">
+            <h4>📱 테스트 방법:</h4>
+            <ol>
+                <li>위 QR 코드를 스마트폰으로 스캔해보세요</li>
+                <li>eSIM 활성화 코드가 정상적으로 인식되는지 확인하세요</li>
+                <li>로고가 QR 코드 가운데에 잘 표시되는지 확인하세요</li>
+            </ol>
+        </div>
+        
+        <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 5px;">
+            <h4>🔧 기술 정보:</h4>
+            <ul>
+                <li><strong>QR 코드 라이브러리:</strong> qrcode</li>
+                <li><strong>이미지 합성:</strong> canvas</li>
+                <li><strong>로고 크기:</strong> 40x40px</li>
+                <li><strong>로고 배경:</strong> 흰색 사각형</li>
+                <li><strong>로고 테두리:</strong> 없음 (깔끔한 디자인)</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

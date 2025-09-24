@@ -8,10 +8,778 @@ import { requireAuth, redirectIfAuthenticated } from "./middlewares/auth.js";
 import { router as joytelRouter } from "./routes/joytel.js";
 import { MySQLClient } from "./clients/mysqlClient.js";
 import path from "path";
+import QRCode from "qrcode";
+import { createCanvas, loadImage } from "canvas";
+import CryptoJS from "crypto-js";
 
 const app = express();
 
-app.use(helmet());
+// MySQL 클라이언트 인스턴스 생성
+const mysqlClient = new MySQLClient();
+
+// 데이터 사용량 조회 API 함수
+async function queryDataUsage(snPin, transId) {
+  try {
+    if (!snPin) {
+      console.log('snPin이 없어 데이터 사용량 조회를 건너뜁니다.');
+      return null;
+    }
+
+    console.log('데이터 사용량 조회 시작:', { snPin });
+
+    // 헤더 생성
+    const appId = '39q97DPCzyj1';
+    const timestamp = Date.now();
+    const transId = Date.now().toString();
+    const appSecret = 'E24C1750751A46ACA9931772DF67BBFA';
+    
+    // MD5 해시 생성
+    const str = appId + transId + timestamp + appSecret;
+    const ciphertext = CryptoJS.MD5(str).toString();
+
+    console.log('API 헤더 정보:', { appId, transId, timestamp, ciphertext });
+
+    const response = await fetch('https://esim.joytelecom.com/openapi/esim/usage/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'AppId': appId,
+        'TransId': transId,
+        'Timestamp': timestamp,
+        'Ciphertext': ciphertext
+      },
+      body: JSON.stringify({
+        coupon: snPin
+      })
+    });
+
+    const result = await response.json();
+    console.log('데이터 사용량 조회 결과:', result);
+    
+    return result;
+  } catch (error) {
+    console.error('데이터 사용량 조회 중 오류 발생:', error);
+    return null;
+  }
+}
+
+// 나라명 매핑 객체
+const countryMapping = {
+  '베트남': 'VIETNAM',
+  '일본': 'JAPAN', 
+  '중국': 'CHINA',
+  '말레이시아': 'MALAYSIA',
+  '필리핀': 'PHILIPPINES',
+  '인도네시아': 'INDONESIA',
+  '싱가폴': 'SINGAPORE',
+  '홍마': 'HONGKONG',
+  '미국': 'USA'
+};
+
+// 어두운 배경을 가진 나라들 (로고와 국가명을 하얀색으로 변경)
+const darkBackgroundCountries = ['HONGKONG', 'CHINA','PHILIPPINES', 'INDONESIA'];
+
+// 나라별 이모지 매핑
+const countryEmojiMapping = {
+  'VIETNAM': '../assets/VT.png',
+  'JAPAN': '../assets/JP.png',
+  'CHINA': '../assets/CN.png',
+  'MALAYSIA': '../assets/MY.png',
+  'PHILIPPINES': '../assets/PL.png',
+  'INDONESIA': '../assets/ID.png',
+  'SINGAPORE': '../assets/SP.png',
+  'HONGKONG': '../assets/HK.png',
+  'USA': '../assets/US.png'
+};
+
+// 나라명 추출 및 영문명 변환 함수
+function extractCountryFromProductName(productName) {
+  if (!productName) return null;
+  
+  for (const [koreanName, englishName] of Object.entries(countryMapping)) {
+    if (productName.includes(koreanName)) {
+      return {
+        koreanName,
+        englishName,
+        flagClass: `flag-${englishName.toLowerCase()}`,
+        emoji: countryEmojiMapping[englishName],
+        isDarkBackground: darkBackgroundCountries.includes(englishName)
+      };
+    }
+  }
+  return null;
+}
+
+// 배경 이미지 변경 함수
+function updateBackgroundImage(countryInfo) {
+  if (!countryInfo) return;
+  
+  const container = document.querySelector('.container');
+  if (container) {
+    container.style.backgroundImage = `url('/assets/${countryInfo.englishName.toLowerCase()}.png')`;
+  }
+}
+
+// QR 코드에서 활성화 코드 추출 함수
+function extractActivationCode(qrCode) {
+  if (!qrCode) return 'N/A';
+  
+  // $ 구분자로 분리하여 마지막 부분 추출
+  const parts = qrCode.split('$');
+  if (parts.length > 0) {
+    return parts[parts.length - 1]; // 마지막 부분 반환
+  }
+  
+  return qrCode; // $가 없으면 원본 반환
+}
+
+// 데이터 사용량 조회 함수
+async function getDataUsage(snPin) {
+  try {
+    console.log('데이터 사용량 조회 시도:', snPin);
+    
+    const response = await fetch('https://esim.joytelecom.com/openapi/esim/usage/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        coupon: snPin
+      })
+    });
+    
+    const result = await response.json();
+    console.log('데이터 사용량 조회 결과:', result);
+    
+    if (result.code === '000' && result.data && result.data.dataUsageList && result.data.dataUsageList.length > 0) {
+      // 가장 최근 사용량 반환 (usageDate 기준으로 정렬)
+      const sortedUsage = result.data.dataUsageList.sort((a, b) => b.usageDate.localeCompare(a.usageDate));
+      const latestUsage = sortedUsage[0];
+      
+      return {
+        success: true,
+        usage: parseInt(latestUsage.usage), // 바이트 단위
+        usageDate: latestUsage.usageDate,
+        mcc: latestUsage.mcc
+      };
+    } else {
+      console.log('데이터 사용량 조회 실패 또는 데이터 없음:', result);
+      return {
+        success: false,
+        usage: 0,
+        usageDate: null,
+        mcc: null
+      };
+    }
+    
+  } catch (error) {
+    console.error('데이터 사용량 조회 중 오류:', error);
+    return {
+      success: false,
+      usage: 0,
+      usageDate: null,
+      mcc: null,
+      error: error.message
+    };
+  }
+}
+
+// 상품명에서 데이터 용량 추출 함수 (기가바이트)
+function extractDataCapacity(productName) {
+  if (!productName) return 1; // 기본값 1GB
+  
+  // 상품명에서 숫자와 "기가", "GB", "g" 등을 찾아서 추출
+  const patterns = [
+    /(\d+(?:\.\d+)?)\s*기가/gi,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = productName.match(pattern);
+    if (match) {
+      const capacity = parseFloat(match[0].replace(/[^\d.]/g, ''));
+      return capacity || 1; // 숫자 추출 실패 시 기본값 1GB
+    }
+  }
+  
+  return 1; // 패턴 매칭 실패 시 기본값 1GB
+}
+
+// 바이트를 기가바이트로 변환
+function bytesToGB(bytes) {
+  return bytes / (1024 * 1024 * 1024);
+}
+
+// 기가바이트를 바이트로 변환
+function gbToBytes(gb) {
+  return gb * 1024 * 1024 * 1024;
+}
+
+// eSIM Progress 데이터 조회 함수
+async function getEsimProgressData(identifier) {
+  try {
+    console.log(`eSIM 데이터 조회 시도: ${identifier}`);
+    await mysqlClient.connect();
+    
+    // 1. eSIM Progress 데이터 조회
+    const esimQuery = `
+      SELECT 
+        transId, snPin, cid, qrCode, notificationPointId,
+        created_at, updated_at
+      FROM esim_progress_notifications 
+      WHERE transId = ? OR cid = ?
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `;
+    
+    const [esimRows] = await mysqlClient.connection.execute(esimQuery, [identifier, identifier]);
+    console.log(`조회 결과:`, esimRows.length > 0 ? '데이터 발견' : '데이터 없음');
+    
+    if (esimRows.length === 0) {
+      return null;
+    }
+    
+    const esimData = esimRows[0];
+    console.log('조회된 eSIM 데이터:', esimData);
+    
+    // 2. snPin으로 user 테이블에서 상품 정보 조회
+    if (esimData.snPin) {
+      const userQuery = `
+        SELECT productName, day
+        FROM user 
+        WHERE snPin LIKE ? 
+        LIMIT 1
+      `;
+      
+      const [userRows] = await mysqlClient.connection.execute(userQuery, [`%${esimData.snPin}%`]);
+      
+      if (userRows.length > 0) {
+        const userData = userRows[0];
+        console.log('조회된 상품 정보:', userData);
+        
+        // 상품 정보를 esimData에 추가
+        esimData.productName = userData.productName;
+        esimData.day = userData.day;
+        
+        // 나라명 추출 및 처리
+        const countryInfo = extractCountryFromProductName(userData.productName);
+        if (countryInfo) {
+          esimData.countryInfo = countryInfo;
+          console.log('나라 정보 추출:', countryInfo);
+        }
+      } else {
+        console.log('상품 정보를 찾을 수 없음');
+        esimData.productName = null;
+        esimData.day = null;
+      }
+    }
+    
+    return esimData;
+  } catch (error) {
+    console.error('eSIM Progress 데이터 조회 실패:', error);
+    return null;
+  } finally {
+    await mysqlClient.disconnect();
+  }
+}
+
+// 상태 매핑 함수
+function getStatusInfo(notificationPointId) {
+  const statusMap = {
+    '1': { text: "단말기 호환성을 확인하는 중입니다.", color: "blue", icon: "🔍" },
+    '2': { text: "설치가 취소되었거나 승인되지 않았습니다.", color: "red", icon: "❌" },
+    '3': { text: "eSIM 프로파일을 다운로드 중입니다.", color: "orange", icon: "⬇️" },
+    '4': { text: "eSIM 프로파일을 설치하는 중입니다.", color: "purple", icon: "⚙️" },
+    '5': { text: "eSIM 프로파일이 삭제되었습니다.", color: "gray", icon: "🗑️" },
+    '6': { text: "eSIM이 활성화되었습니다.", color: "green", icon: "✅" },
+    '7': { text: "eSIM이 비활성화되었습니다.", color: "yellow", icon: "⏸️" },
+    '101': { text: "이 기기의 eSIM(EID)이 차단되어 사용이 불가능합니다.", color: "red", icon: "🚫" },
+    '102': { text: "해당 기종은 eSIM 사용이 제한되어 있습니다.", color: "red", icon: "📱" }
+  };
+  
+  return statusMap[notificationPointId] || { 
+    text: "상태를 확인하는 중입니다.", 
+    color: "gray", 
+    icon: "⏳" 
+  };
+}
+
+// 상태에 따른 메시지 함수
+function getStatusMessage(notificationPointId) {
+  const messageMap = {
+    1: "상품 사용시간(한국시간 기준) 단말기 호환성 확인 중입니다.",
+    2: "상품 사용시간(한국시간 기준) 설치가 취소되었습니다.",
+    3: "상품 사용시간(한국시간 기준) 프로파일 다운로드 중입니다.",
+    4: "상품 사용시간(한국시간 기준) 프로파일 설치 중입니다.",
+    5: "상품 사용시간(한국시간 기준) 프로파일이 삭제되었습니다.",
+    6: "상품 사용시간(한국시간 기준) 활성화 완료! 사용 가능합니다.",
+    7: "상품 사용시간(한국시간 기준) 비활성화 상태입니다.",
+    101: "상품 사용시간(한국시간 기준) 기기 차단으로 사용 불가능합니다.",
+    102: "상품 사용시간(한국시간 기준) 기종 제한으로 사용 불가능합니다."
+  };
+  
+  return messageMap[notificationPointId] || "상품 사용시간(한국시간 기준) 상태를 확인하는 중입니다.";
+}
+
+// QR 코드 생성 함수 (로고 없이)
+async function generateQRCodeWithLogo(text, logoPath) {
+  console.log("generateQRCodeWithLogo");
+  try {
+    // QR 코드 생성 (로고 없이)
+    const qrCodeBuffer = await QRCode.toBuffer(text, {
+      width: 200,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      }
+    });
+    
+    return qrCodeBuffer;
+    
+  } catch (error) {
+    console.error('QR 코드 생성 실패:', error);
+    throw error;
+  }
+}
+
+// QR 코드 생성 함수 (로고 포함)
+async function generateQRCodeImage(qrCodeData) {
+  console.log("generateQRCodeImage");
+  if (!qrCodeData) return null;
+  
+  try {
+    // qrCodeData가 JSON인 경우 파싱
+    let qrData = qrCodeData;
+    if (typeof qrCodeData === 'string') {
+      try {
+        qrData = JSON.parse(qrCodeData);
+      } catch (e) {
+        // JSON이 아닌 경우 그대로 사용
+        qrData = qrCodeData;
+      }
+    }
+    
+    // 로고 파일 경로
+    // const logoPath = path.join(__dirname, '../public/assets/logo-ringtalk.png');
+    
+    // QR 코드 생성 (로고 없이)
+    const qrCodeBuffer = await generateQRCodeWithLogo(qrData, null);
+    
+    return `data:image/png;base64,${qrCodeBuffer.toString('base64')}`;
+    
+  } catch (error) {
+    console.error('QR 코드 생성 실패:', error);
+    return null;
+  }
+}
+
+// HTML 템플릿 렌더링 함수
+async function renderEsimDetailPage(esimData) {
+  console.log(esimData);
+  const qrCodeImage = await generateQRCodeImage(esimData.qrCode);
+  
+  // 서버에서 데이터 사용량 조회
+  let usageData = null;
+  if (esimData.snPin) {
+    usageData = await queryDataUsage(esimData.snPin, esimData.transId || Date.now().toString());
+    console.log("usageData", usageData);
+    
+    // 데이터 사용량이 있으면 notificationPointId를 6으로 고정
+    if (usageData && usageData.code === '000' && usageData.data && usageData.data.dataUsageList && usageData.data.dataUsageList.length > 0) {
+      esimData.notificationPointId = '6';
+      console.log("데이터 사용량 확인됨, notificationPointId를 6으로 설정");
+    }
+  }
+  
+  // 상태 정보 계산 (데이터 사용량 조회 후)
+  const statusInfo = getStatusInfo(esimData.notificationPointId);
+  
+  return `
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>RingTalk eSIM 설치 설명서</title>
+
+      <!-- Inter 폰트 -->
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+
+      <!-- 스타일 -->
+      <link rel="stylesheet" href="/style.css" />
+      
+      <!-- 상태 표시 스타일 -->
+      <style>
+        .status-indicator {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 20px;
+          border-radius: 8px;
+          font-weight: 600;
+          margin: 20px;
+        }
+        .status-blue { background: #e3f2fd; color: #1976d2; }
+        .status-green { background: #e8f5e8; color: #2e7d32; }
+        .status-orange { background: #fff3e0; color: #f57c00; }
+        .status-purple { background: #f3e5f5; color: #7b1fa2; }
+        .status-red { background: #ffebee; color: #c62828; }
+        .status-yellow { background: #fffde7; color: #f9a825; }
+        .status-gray { background: #f5f5f5; color: #616161; }
+        
+        /* 어두운 배경용 스타일 */
+        .header.dark-bg .logo img {
+          filter: brightness(0) invert(1);
+        }
+        .banner.dark-bg .country span:first-child {
+          color: white !important;
+        }
+        
+        /* 이모지 스타일 */
+        .flag-emoji {
+          font-size: 1em;                    /* 글자 크기와 동일하게 */
+          margin-left: 8px;
+          display: inline-block;              /* 인라인 블록으로 설정 */
+          vertical-align: middle;             /* 수직 정렬 */
+          width: 40px;
+        }
+        
+        /* 프로그래스 바 스타일 */
+        .progress-bar-container {
+          margin: 15px 0;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .progress-bar {
+          flex: 1;
+          height: 8px;
+          background-color: #e0e0e0;
+          border-radius: 4px;
+          overflow: hidden;
+        }
+        
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 100%);
+          border-radius: 4px;
+          transition: width 0.3s ease;
+          width: 0%;
+        }
+        
+        .progress-text {
+          font-size: 12px;
+          font-weight: 600;
+          color: #666;
+          min-width: 35px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <!-- 헤더 -->
+        <header class="header ${esimData.countryInfo && esimData.countryInfo.isDarkBackground ? 'dark-bg' : ''}">
+          <h1 class="logo" aria-label="RingTalk">
+            <img src="/assets/logo-ringtalk.svg" alt="RingTalk" />
+          </h1>
+          <a href="https://smartstore.naver.com/ringtalk/notice/list?cp=1" class="badge" target="_blank">eSIM 설치 설명서</a>
+        </header>
+
+        <!-- 국가 배너 -->
+        ${esimData.countryInfo ? `
+        <section class="banner ${esimData.countryInfo.isDarkBackground ? 'dark-bg' : ''}">
+          <h2 class="country">
+            <span>${esimData.countryInfo.englishName}</span>
+            <img class="flag-emoji" src="${esimData.countryInfo.emoji}"></img>
+          </h2>
+        </section>
+        ` : `
+        <section class="banner">
+          <h2 class="country">
+            <span>JAPAN</span>
+            <span class="flag-emoji" aria-hidden="true">🇯🇵</span>
+          </h2>
+        </section>
+        `}
+
+        <!-- 본문 카드 -->
+        <section class="card">
+          <!-- 상단 유리 박스 -->
+          <div class="glass">
+            <div class="qr-and-copy">
+              <div class="qr-section">
+                <div class="chip">eSIM</div>
+                <h3>QR 코드<br>스캔하세요!</h3>
+                <p class="sub">우측 QR코드를<br>스캔해서 설치하세요.</p>
+              </div>
+              ${qrCodeImage ? 
+                `<img src="${qrCodeImage}" alt="QR 코드" class="qr">` : 
+                `<img src="/assets/qr-placeholder.png" alt="QR 코드" class="qr">`
+              }
+            </div>
+
+            <div class="info">
+              <p><b>ICCID :</b> ${esimData.cid || 'N/A'}</p>
+              <p class="product-line"><b>상품명 :</b> ${esimData.productName && esimData.day ? `${esimData.productName} / ${esimData.day}일` : (esimData.snPin || 'N/A')}</p>
+            </div>
+          </div>
+
+          <!-- ▼▼▼ 흰 패널 안에 '그룹 + 알림 + 강조 + 데이터' 모두 넣기 ▼▼▼ -->
+          <div class="panel">
+            <div class="groups">
+              <!-- 아이폰 그룹 -->
+              <div class="group group--ios">
+                <div class="group-title title--ios">아이폰</div>
+                <div class="field field--smdp">
+                  <div class="field-content">
+                    <span class="label">SM-DP+ 주소</span>
+                  </div>
+                  <button class="button copy-btn" data-copy="rsp-eu.simlessly.com">복사</button>
+                </div>
+                <div class="field field--ios-act">
+                  <div class="field-content">
+                    <span class="label">활성화 코드</span>
+                  </div>
+                  <button class="button copy-btn" data-copy="${extractActivationCode(esimData.qrCode)}">복사</button>
+                </div>
+              </div>
+
+              <!-- 안드로이드 그룹 -->
+              <div class="group group--android">
+                <div class="group-title title--and">안드로이드</div>
+                <div class="field field--and-act">
+                  <div class="field-content">
+                    <span class="label">활성화 코드</span>
+                  </div>
+                  <button class="button copy-btn" data-copy="${esimData.qrCode || 'N/A'}">복사</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 안내/강조/데이터도 패널 내부로 -->
+            <p class="notice">※ QR 코드 미작동 시, 수동으로 복사 붙여넣기하여 사용하세요.</p>
+            <p class="emph">${getStatusMessage(esimData.notificationPointId)}</p>
+
+            <div class="data">
+              <div class="data-progress-bar">
+                <span class="data-label">잔여 데이터</span>
+                <span class="data-value" id="remainingData">로딩 중...</span>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar">
+                  <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <span class="progress-text" id="progressText">0%</span>
+              </div>
+              <p class="data-disclaimer">실 사용량과 다소 차이가 있을 수 있습니다.</p>
+              <p class="total">누적 데이터 <span id="totalUsage">0.00 GB</span></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 푸터 (컨테이너 안) -->
+        <footer class="footer">
+          <span>카톡(한국시간)</span>
+          <svg width="100" height="40" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg" class="footer-logo">
+            <g filter="url(#filter0_d_1_60)">
+              <path d="M16.6 20.54H15.8C14.94 20.54 14.16 19.96 14.16 18.88C14.16 18.06 14.72 17.22 15.72 17.22H16.1C17.3 17.22 18.3 16.88 18.3 15.64C18.3 14.48 17.26 14.12 16.34 14.12H14.04C13.58 14.12 13.56 14.54 13.56 14.66C13.4 17.92 13.5 22.1 13.58 24.64C13.6 25.28 13.04 26.02 11.88 26.02C10.44 26.02 10.18 25.14 10.14 24.66C10 22.88 10 13.92 10.26 12.26C10.42 11.2 11.46 10.78 11.98 10.78H16C20.3 10.78 21.7 13.14 21.7 15.66C21.7 17.26 21.1 18.76 19.8 19.66C20.6 21.48 21.22 22.96 21.64 24.02C21.94 24.76 21.18 25.66 20.5 25.9C19.8 26.16 18.8 26.02 18.48 25.24C17.94 24.04 17.44 22.58 16.6 20.54ZM27.1413 16.28C27.2213 18.9 27.2613 21.5 27.1413 24.68C27.1013 25.44 26.1413 26.06 25.2813 26.02C24.4013 25.98 23.6813 25.36 23.6813 24.54C23.7613 21.56 23.7413 19.18 23.7013 16.36C23.7013 15.56 24.4013 15.02 25.2413 14.94C26.1613 14.86 27.1413 15.32 27.1413 16.28ZM27.1613 11.7V12.56C27.1013 13.5 26.2013 13.98 25.2413 13.9C24.3613 13.82 23.7413 13.34 23.7213 12.7L23.7013 11.92C23.6613 11.06 24.6613 10.6 25.3413 10.6C26.1813 10.6 27.1213 10.96 27.1613 11.7ZM36.3908 19.92C36.3908 18.82 36.0708 18.08 35.4308 18.08H35.0508C34.2508 18.08 33.6308 17.32 33.6308 16.4C33.6308 15.5 34.2508 14.74 35.0108 14.74H35.5908C39.0308 14.74 39.8108 16.98 39.8108 19.72C39.8108 21.06 39.7908 23.46 39.7508 24.56C39.7308 25.18 39.4308 26.02 38.0308 26.02C36.8108 26.02 36.3108 25.2 36.3108 24.52C36.3108 23.26 36.3908 20.94 36.3908 19.92ZM33.0508 24.7C33.0508 25.14 32.5308 26.02 31.3708 26.02C30.2308 26.02 29.6308 25.24 29.6108 24.5C29.5508 22.02 29.5308 18.46 29.6108 16.16C29.6308 15.56 30.1908 14.68 31.3708 14.68C32.4308 14.68 33.0708 15.42 33.0508 16.18C32.9908 18.38 32.9708 21.64 33.0508 24.7ZM46.7355 29.22C45.5155 29.26 44.3355 28.94 43.5755 28.46C43.0755 28.2 42.5755 27.38 42.9955 26.58C43.5355 25.62 44.3755 25.52 45.0955 25.92C45.5755 26.18 46.0155 26.34 46.8155 26.34C47.9555 26.34 48.5555 25.4 48.6155 24.08C48.6955 22.46 48.6155 20.06 48.5155 18.2C48.5155 18.04 48.4755 17.6 47.9755 17.6H46.9155C45.5755 17.6 44.7755 18.56 44.7755 19.82C44.7755 21.16 45.4555 22.1 46.3755 22.1H46.7755C47.4555 22.1 47.9355 22.74 47.9355 23.5C47.9355 24.26 47.5155 24.98 46.7955 24.98H46.2155C43.0355 24.98 41.3755 22.8 41.3755 19.84C41.3755 17.36 42.8155 14.74 46.8555 14.74H49.9355C50.9955 14.74 51.6955 15.38 51.8555 16.26C51.9955 17.2 52.0955 21.22 52.0155 23.88C51.8955 27.58 49.5755 29.12 46.7355 29.22ZM55.1425 14.14H52.3225C51.6625 14.14 51.0825 13.5 51.0825 12.5C51.0825 11.64 51.5825 10.78 52.3225 10.78H61.3425C62.1025 10.78 62.5825 11.42 62.5825 12.48C62.5825 13.36 62.1025 14.14 61.3225 14.14H58.5825C58.6225 17.4 58.6225 21.94 58.5825 24.6C58.5825 25.48 57.8225 26.06 56.8025 26.02C55.8025 25.98 55.1225 25.4 55.1225 24.56C55.1425 21.88 55.2025 17.28 55.1425 14.14ZM66.3825 14.58C69.0625 14.6 71.3025 15.94 71.3425 19.42C71.3425 20.72 71.3425 23.6 71.1825 24.58C71.0225 25.46 70.3625 26.02 69.5025 26.02H66.5625C63.3825 26.02 61.0825 24.96 61.0825 22.4C61.0825 20.04 62.2225 18.74 64.7625 18.74H66.1025C66.8425 18.74 67.2625 19.32 67.2625 20.1C67.2625 20.82 66.9025 21.5 66.0825 21.5H65.3625C64.7625 21.5 64.4825 21.92 64.4825 22.38C64.4825 23 65.2225 23.28 66.1025 23.28H67.2825C67.8225 23.28 67.8425 22.8 67.8625 22.6C67.9225 21.24 67.9425 20.32 67.9425 19.76C67.9425 18.24 67.6425 17.46 66.2425 17.42C65.6025 17.4 64.3425 17.56 63.7625 17.62C62.6825 17.68 62.2425 17.1 62.2025 16.34C62.1625 15.38 62.8425 14.96 63.5025 14.8C64.4625 14.6 65.8025 14.58 66.3825 14.58ZM76.7589 11.88C77.1989 15.36 76.9989 22.6 76.7789 24.82C76.6989 25.64 75.8989 26.08 74.9389 26.02C74.0789 25.96 73.3389 25.36 73.3989 24.5C73.6589 21.48 73.6789 15.1 73.3989 12.36C73.2789 11.44 74.0789 10.88 74.8989 10.78C75.7189 10.68 76.6589 11.14 76.7589 11.88ZM88.4811 17.76L82.8011 22.14C82.8211 23.04 82.8811 23.86 82.9411 24.5C83.0211 25.36 82.2611 25.96 81.4011 26.02C80.4411 26.08 79.6411 25.64 79.5611 24.82C79.3411 22.6 79.1411 15.36 79.5811 11.88C79.6811 11.14 80.6211 10.68 81.4411 10.78C82.2611 10.88 83.0411 11.44 82.9411 12.36C82.8011 13.66 82.7411 15.8 82.7411 18L86.3211 15.12C86.7811 14.74 87.8811 14.7 88.4611 15.46C89.1011 16.24 88.9411 17.34 88.4811 17.76ZM87.3811 21.44L89.1011 23.36C89.6611 24 89.3611 25.14 88.7011 25.68C87.9011 26.3 86.9411 26.02 86.5611 25.6L84.8411 23.7C84.3211 23.14 84.4611 22.06 85.1611 21.44C85.8811 20.88 86.8811 20.86 87.3811 21.44Z" fill="white"/>
+            </g>
+            <defs>
+              <filter id="filter0_d_1_60" x="0" y="0.599976" width="99.6611" height="38.66" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+                <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+                <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+                <feOffset/>
+                <feGaussianBlur stdDeviation="5"/>
+                <feComposite in2="hardAlpha" operator="out"/>
+                <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0.470588 0 0 0 0 1 0 0 0 0.3 0"/>
+                <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_60"/>
+                <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_60" result="shape"/>
+              </filter>
+            </defs>
+          </svg>
+          <span>09:00-19:00</span>
+        </footer>
+      </div>
+
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          // 배경 이미지 변경
+          const countryInfo = ${esimData.countryInfo ? JSON.stringify(esimData.countryInfo) : 'null'};
+          if (countryInfo) {
+            const container = document.querySelector('.container');
+            if (container) {
+              container.style.backgroundImage = 'url(/assets/' + countryInfo.englishName.toLowerCase() + '.png)';
+              console.log('배경 이미지 변경:', countryInfo.englishName.toLowerCase());
+            }
+          }
+          
+          // 서버에서 조회한 데이터 사용량 정보를 사용하여 UI 업데이트
+          function updateDataUsageUI() {
+            const usageData = ${usageData ? JSON.stringify(usageData) : 'null'};
+            const productName = '${esimData.productName || ''}';
+
+            console.log(usageData)
+            
+            if (usageData && usageData.code === '000' && usageData.data) {
+              // 가장 최근 사용량 가져오기
+              const sortedUsage = usageData.data.dataUsageList.sort((a, b) => b.usageDate.localeCompare(a.usageDate));
+              const totalUsage = usageData.data.totalUsage;
+              const latestUsage = sortedUsage[0];
+              //const usedBytes = parseInt(latestUsage.usage);
+              
+              // 상품명에서 데이터 용량 추출 (기가바이트)
+              function extractDataCapacity(productName) {
+                if (!productName) return 1;
+                
+                const patterns = [
+                  /(\\d+(?:\\.\\d+)?)\\s*기가/gi,
+                ];
+                
+                for (const pattern of patterns) {
+                  const match = productName.match(pattern);
+                  if (match) {
+                    const capacity = parseFloat(match[0].replace(/[^\\d.]/g, ''));
+                    return capacity || 1;
+                  }
+                }
+                
+                return 1;
+              }
+              
+              const totalCapacityGB = extractDataCapacity(productName);
+              const totalCapacityBytes = totalCapacityGB * 1024 * 1024 * 1024;
+              const usedGB = usedBytes / (1024 * 1024 * 1024);
+              const remainingGB = totalCapacityGB - usedGB;
+              const usagePercentage = Math.min((usedBytes / totalCapacityBytes) * 100, 100);
+              
+              // 상품명에 "매일"이 있으면 기존 로직, "총"이 있으면 totalUsage를 usedBytes로 설정
+              let displayUsedGB, displayRemainingGB, displayPercentage;
+              
+              if (productName.includes('매일')) {
+                // 매일 상품: 기존 로직 (일일 사용량 기준)
+                displayUsedGB = usedGB;
+                displayRemainingGB = remainingGB;
+                displayPercentage = usagePercentage;
+                } else if (productName.includes('총')) {
+                  // 총 상품: 누적 사용량을 그대로 표시
+                  displayUsedGB = totalUsage / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
+                  displayRemainingGB = (totalCapacityBytes - totalUsage) / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
+                  displayPercentage = Math.min((totalUsage / totalCapacityBytes) * 100, 100);
+              } else {
+                // 기본: 기존 로직
+                displayUsedGB = usedGB;
+                displayRemainingGB = remainingGB;
+                displayPercentage = usagePercentage;
+              }
+              
+              // UI 업데이트
+              
+              const remainingDataElement = document.getElementById('remainingData');
+              const progressFillElement = document.getElementById('progressFill');
+              const progressTextElement = document.getElementById('progressText');
+              const totalUsageElement = document.getElementById('totalUsage');
+              
+              if (remainingDataElement) {
+                if(totalCapacityGB == 1) {
+                  remainingDataElement.textContent = '무제한 입니다.';
+                } else {
+                 remainingDataElement.textContent = displayRemainingGB.toFixed(2) + ' GB';
+                }
+                
+              }
+              
+              if (progressFillElement) {
+                progressFillElement.style.width = displayPercentage + '%';
+              }
+              
+              if (progressTextElement) {
+                progressTextElement.textContent = displayPercentage.toFixed(1) + '%';
+              }
+              console.log(displayUsedGB)
+              
+              if (totalUsageElement) {
+                totalUsageElement.textContent = displayUsedGB.toFixed(2) + ' GB';
+              }
+              
+              console.log('데이터 사용량 업데이트 완료:', {
+                totalCapacityGB,
+                displayUsedGB,
+                displayRemainingGB,
+                displayPercentage,
+                productType: productName.includes('매일') ? '매일' : productName.includes('총') ? '총' : '기본'
+              });
+              
+            } else {
+              console.log('데이터 사용량 조회 실패 또는 데이터 없음');
+              
+              // 기본값으로 설정
+              const remainingDataElement = document.getElementById('remainingData');
+              if (remainingDataElement) {
+                remainingDataElement.textContent = '데이터 없음';
+              }
+            }
+          }
+          
+          // 페이지 로드 시 데이터 사용량 UI 업데이트
+          updateDataUsageUI();
+          
+          // 복사 버튼 이벤트 리스너 추가
+          const copyButtons = document.querySelectorAll('.copy-btn');
+          
+          copyButtons.forEach(function(button) {
+            button.addEventListener('click', function() {
+              const textToCopy = this.getAttribute('data-copy');
+              
+              navigator.clipboard.writeText(textToCopy).then(function() {
+                // 복사 성공 피드백
+                button.textContent = '복사됨!';
+                button.style.background = '#4CAF50';
+                
+                setTimeout(() => {
+                  button.textContent = '복사';
+                  button.style.background = '';
+                }, 2000);
+              }).catch(function(err) {
+                console.error('복사 실패:', err);
+                // 폴백: 텍스트 선택 방식
+                const textArea = document.createElement('textarea');
+                textArea.value = textToCopy;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                // 피드백 표시
+                button.textContent = '복사됨!';
+                button.style.background = '#4CAF50';
+                
+                setTimeout(() => {
+                  button.textContent = '복사';
+                  button.style.background = '';
+                }, 2000);
+              });
+            });
+          });
+        });
+      </script>
+    </body>
+    </html>
+  `;
+}
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"]
+    }
+  }
+}));
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
@@ -29,14 +797,83 @@ app.use(session({
 // IP 화이트리스트 (전역) - 테스트용으로 임시 비활성화
 // app.use(ipWhitelistMiddleware);
 
-// eSIM QR 코드 상세페이지 라우트 (정적 파일 서빙보다 먼저 설정)
-app.get("/esim/qr-detail", (req, res) => {
+// eSIM QR 코드 상세페이지 라우트 (동적 라우팅으로 변경)
+app.get("/esim/qr-detail", async (req, res) => {
+  console.log(req);
   try {
-    const filePath = path.join(process.cwd(), 'public/esim-qr-detail.html');
-    res.sendFile(filePath);
+    const { transId, cid } = req.query;
+    
+    if (!transId && !cid) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>eSIM 정보 없음 - RingTalk</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; text-align: center; padding: 50px; }
+            .error { color: #e74c3c; }
+          </style>
+        </head>
+        <body>
+          <h1 class="error">잘못된 접근입니다</h1>
+          <p>transId 또는 cid 파라미터가 필요합니다.</p>
+          <p>예: /esim/qr-detail?transId=TXN123 또는 /esim/qr-detail?cid=CUSTOMER001</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // DB에서 데이터 조회
+    const esimData = await getEsimProgressData(transId || cid);
+    
+    if (!esimData) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html lang="ko">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>eSIM 정보 없음 - RingTalk</title>
+          <style>
+            body { font-family: 'Segoe UI', sans-serif; text-align: center; padding: 50px; }
+            .not-found { color: #7f8c8d; }
+          </style>
+        </head>
+        <body>
+          <h1 class="not-found">eSIM 정보를 찾을 수 없습니다</h1>
+          <p>올바른 링크로 접근해주세요.</p>
+          <p>조회한 ID: ${transId || cid}</p>
+        </body>
+        </html>
+      `);
+    }
+
+    // HTML 템플릿 렌더링
+    const html = await renderEsimDetailPage(esimData);
+    res.send(html);
+    
   } catch (err) {
     console.error('eSIM QR 상세페이지 로딩 실패:', err);
-    res.status(500).json({ error: '페이지를 불러올 수 없습니다.' });
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html lang="ko">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>오류 발생 - RingTalk</title>
+        <style>
+          body { font-family: 'Segoe UI', sans-serif; text-align: center; padding: 50px; }
+          .error { color: #e74c3c; }
+        </style>
+      </head>
+      <body>
+        <h1 class="error">오류가 발생했습니다</h1>
+        <p>잠시 후 다시 시도해주세요.</p>
+      </body>
+      </html>
+    `);
   }
 });
 
@@ -44,7 +881,13 @@ app.get("/esim/qr-detail", (req, res) => {
 app.use("/api/joytel", joytelRouter);
 
 // 정적 파일 제공 설정 수정 (라우트 설정 후에 배치)
-app.use(express.static(path.join(process.cwd(), 'public')));
+app.use(express.static(path.join(process.cwd(), 'public'), {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    }
+  }
+}));
 
 // 로그인 API
 app.post("/api/login", (req, res) => {
@@ -94,8 +937,6 @@ app.get("/health", (req, res) => {
 
 // 관리자 대시보드 API
 app.get("/api/admin/orders", requireAuth, async (req, res) => {
-  const mysqlClient = new MySQLClient();
-  
   try {
     await mysqlClient.connect();
     

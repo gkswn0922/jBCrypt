@@ -180,7 +180,8 @@ router.post("/esim/callback", requireJsonContent, async (req, res) => {
                 "Ciphertext": individualCiphertext
               },
               body: JSON.stringify({
-                coupon: snPin
+                coupon: snPin,
+                qrcodeType: 1
               })
             });
 
@@ -335,47 +336,109 @@ router.post("/notify/coupon/redeem", requireJsonContent, async (req, res) => {
       });
     }
 
+    // cid 필드 검증 (새로 추가)
+    if (!data.cid) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'data.cid가 필요합니다.' 
+      });
+    }
+
     // 디버깅을 위한 파라미터 로깅
     logger.info('파라미터 검증 완료', {
       transId,
       coupon: data.coupon,
       qrcode: data.qrcode,
+      cid: data.cid,
       resultCode,
       resultMesg,
       finishTime
     });
 
-         // 데이터베이스에 QR 코드 저장 (BizPPurio API 호출 포함)
-     try {
-       await mysqlClient.updateQrCodeByTransId(data.coupon, data.qrcode);
-       
-       logger.info('QR 코드 업데이트 및 BizPPurio API 호출 완료', {
-         coupon: data.coupon,
-         qrcode: data.qrcode,
-         resultCode,
-         resultMesg,
-         finishTime,
-         timestamp: new Date().toISOString()
-       });
+    // 데이터베이스에 QR 코드 저장 (BizPPurio API 호출 포함)
+    try {
+      // 1. 먼저 esim_progress_notifications 테이블에 데이터 저장
+      try {
+        await mysqlClient.connect();
+        
+        // 먼저 transId가 존재하는지 확인
+        const checkQuery = `
+          SELECT COUNT(*) as count FROM esim_progress_notifications WHERE transId = ?
+        `;
+        const [checkRows] = await mysqlClient.connection.execute(checkQuery, [transId]);
 
-       
+        if (checkRows[0].count === 0) {
+          // transId가 존재하지 않으면 INSERT
+          const progressInsertQuery = `
+            INSERT INTO esim_progress_notifications 
+            (transId, snPin, cid, qrCode, created_at) 
+            VALUES (?, ?, ?, ?, NOW())
+          `;
+          
+          await mysqlClient.connection.execute(progressInsertQuery, [
+            transId,
+            data.coupon,    // snPin
+            data.cid,       // cid
+            data.qrcode     // qrCode
+          ]);
+          
+          logger.info('eSIM Progress Notification 저장 완료', {
+            transId,
+            snPin: data.coupon,
+            cid: data.cid,
+            qrCode: data.qrcode,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          logger.info('transId가 이미 존재하여 건너뛰기', {
+            transId,
+            timestamp: new Date().toISOString()
+          });
+        }
 
-       return res.status(200).json({ 
-         ok: true, 
-         message: 'QR 코드가 성공적으로 저장되었습니다.',
-         transId
-       });
-    } catch (dbError) {
-      logger.error('QR 코드 저장 실패', {
-        transId,
+      } catch (progressError) {
+        logger.error('eSIM Progress Notification 저장 실패', {
+          transId,
+          snPin: data.coupon,
+          cid: data.cid,
+          qrCode: data.qrcode,
+          error: progressError.message,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Progress 테이블 저장 실패해도 전체는 성공으로 처리
+        logger.warn('Progress 테이블 저장 실패했지만 전체는 성공으로 처리', {
+          transId,
+          error: progressError.message
+        });
+      } finally {
+        await mysqlClient.disconnect();
+      }
+
+      // 2. 그 다음 updateQrCodeByTransId 호출 (BizPPurio API 호출 포함)
+      await mysqlClient.updateQrCodeByTransId(data.coupon, data.qrcode);
+      
+      logger.info('QR 코드 업데이트 및 BizPPurio API 호출 완료', {
+        coupon: data.coupon,
         qrcode: data.qrcode,
-        error: dbError.message,
+        resultCode,
+        resultMesg,
+        finishTime,
         timestamp: new Date().toISOString()
       });
 
+    } catch (error) {
+      logger.error('QR 코드 저장 및 BizPPurio API 호출 실패', {
+        transId,
+        coupon: data.coupon,
+        qrcode: data.qrcode,
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+      
       return res.status(500).json({ 
-        ok: false, 
-        error: 'QR 코드 저장 실패: ' + dbError.message 
+        code: "999", 
+        mesg: "System Error: QR 코드 저장 실패" 
       });
     }
   } catch (err) {
@@ -399,14 +462,146 @@ router.post("/esim/status-usage", requireJsonContent, async (req, res) => {
   }
 });
 
+// 6) eSIM Progress Notification (JoyTel)
 router.post("/notify/esim/esim-progress", requireJsonContent, async (req, res) => {
   try {
-    const _payload = req.body;
-    // TODO: 비즈니스 로직: DB 업데이트, 상태 변경, 로그 적재 등
-    // 필요 시 JoyTel 서명 검증 로직 추가
-    return res.status(200).json({ ok: true });
+    const payload = req.body;
+    
+    // 외부로부터 받은 파라미터들을 로그로 기록
+    logger.info('eSIM Progress Notification API 호출', {
+      timestamp: new Date().toISOString(),
+      headers: req.headers,
+      body: payload,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      endpoint: '/notify/esim/esim-progress'
+    });
+
+    // Request Body Validation
+    const { transId, resultCode, resultMesg, finishTime, data } = payload;
+    
+    // 필수 필드 검증
+    if (!transId) {
+      logger.warn('eSIM Progress Notification - transId 누락', { payload });
+      return res.status(400).json({ 
+        code: "999", 
+        mesg: "System Error: transId is required" 
+      });
+    }
+
+    if (!data) {
+      logger.warn('eSIM Progress Notification - data 누락', { payload });
+      return res.status(400).json({ 
+        code: "999", 
+        mesg: "System Error: data is required" 
+      });
+    }
+
+    const { cid, eid, profileType, timestamp, notificationPointId, resultData, notificationPointStatus } = data;
+
+    // data 내부 필수 필드 검증
+    if (!cid) {
+      logger.warn('eSIM Progress Notification - cid 누락', { payload });
+      return res.status(400).json({ 
+        code: "999", 
+        mesg: "System Error: cid is required" 
+      });
+    }
+
+    if (!profileType) {
+      logger.warn('eSIM Progress Notification - profileType 누락', { payload });
+      return res.status(400).json({ 
+        code: "999", 
+        mesg: "System Error: profileType is required" 
+      });
+    }
+
+    // 수신된 이벤트를 console.log로 출력
+    console.log('=== eSIM Progress Notification Event ===');
+    console.log('TransId:', transId);
+    console.log('ResultCode:', resultCode);
+    console.log('ResultMessage:', resultMesg);
+    console.log('FinishTime:', finishTime);
+    console.log('CID:', cid);
+    console.log('EID:', eid);
+    console.log('ProfileType:', profileType);
+    console.log('Timestamp:', timestamp);
+    console.log('NotificationPointId:', notificationPointId);
+    console.log('ResultData:', resultData);
+    
+    if (notificationPointStatus) {
+      console.log('NotificationPointStatus:');
+      console.log('  Status:', notificationPointStatus.status);
+      if (notificationPointStatus.statusCodeData) {
+        console.log('  StatusCodeData:');
+        console.log('    SubjectCode:', notificationPointStatus.statusCodeData.subjectCode);
+        console.log('    ReasonCode:', notificationPointStatus.statusCodeData.reasonCode);
+        console.log('    Message:', notificationPointStatus.statusCodeData.message);
+        console.log('    SubjectIdentifier:', notificationPointStatus.statusCodeData.subjectIdentifier);
+      }
+    }
+    console.log('==========================================');
+
+    // 데이터베이스에 저장 (MySQL 클라이언트 사용)
+    try {
+      await mysqlClient.connect();
+      
+      // eSIM progress 테이블에 데이터 업데이트 (transId 기준)
+      const updateQuery = `
+        UPDATE esim_progress_notifications 
+        SET notificationPointId = ?
+        WHERE cid = ?
+      `;
+      
+      await mysqlClient.connection.execute(updateQuery, [
+        notificationPointId || null,  // snPin으로 사용 (요청에서 cid를 받아서 snPin에 저장)
+      ]);
+
+      logger.info('eSIM Progress Notification 업데이트 완료', {
+        transId,
+        cid,
+        profileType,
+        resultCode,
+        resultMesg,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (dbError) {
+      logger.error('eSIM Progress Notification DB 업데이트 실패', {
+        transId,
+        cid,
+        profileType,
+        error: dbError.message,
+        timestamp: new Date().toISOString()
+      });
+      
+      // DB 저장 실패해도 JoyTel에는 성공 응답 (요구사항에 따라)
+      logger.warn('DB 저장 실패했지만 JoyTel에는 성공 응답 전송', {
+        transId,
+        error: dbError.message
+      });
+    } finally {
+      await mysqlClient.disconnect();
+    }
+
+    // JoyTel 서버에 성공 응답 반환 (요구사항에 따라)
+    return res.status(200).json({ 
+      code: "000", 
+      mesg: "success" 
+    });
+
   } catch (err) {
-    return res.status(500).json({ ok: false, error: err?.message || String(err) });
+    // 예외 발생 시 에러 로깅 및 에러 응답
+    logger.error('eSIM Progress Notification API 에러', {
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString()
+    });
+    
+    return res.status(200).json({ 
+      code: "999", 
+      mesg: "System Error" 
+    });
   }
-})
+});
 

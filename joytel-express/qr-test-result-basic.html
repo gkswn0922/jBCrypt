@@ -1,0 +1,94 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR 코드  테스트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .title {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .qr-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .qr-image {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            background: white;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .info h3 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .code {
+            font-family: monospace;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 3px;
+            word-break: break-all;
+        }
+        .success {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .warning {
+            color: #ffc107;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">🎯 QR 코드  테스트 결과</h1>
+        
+        <div class="qr-section">
+            <h2>생성된 QR 코드</h2>
+            <img src="data:image/png;base64,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" alt="QR 코드" class="qr-image">
+        </div>
+        
+        <div class="info">
+            <h3>📋 테스트 정보</h3>
+            <p><strong>활성화 코드:</strong></p>
+            <div class="code">LPA:1$rsp.demo.com$0913F6176020B7C603E3R42B61P686D3</div>
+            <p><strong>로고 파일:</strong> E:\jBCrypt\joytel-express\public\assets\logo-ringtalk.png</p>
+            <p><strong>로고 적용:</strong> ❌ 적용 안됨</p>
+            <p><strong>생성 시간:</strong> 2025. 9. 12. 오후 12:45:52</p>
+        </div>
+        
+        <div class="warning">⚠️ 로고가 적용되지 않았습니다. 기본 QR 코드만 생성되었습니다.</div>
+        
+        <div style="margin-top: 20px; padding: 15px; background: #d4edda; border-radius: 5px;">
+            <h4>📱 테스트 방법:</h4>
+            <ol>
+                <li>위 QR 코드를 스마트폰으로 스캔해보세요</li>
+                <li>eSIM 활성화 코드가 정상적으로 인식되는지 확인하세요</li>
+                
+            </ol>
+        </div>
+    </div>
+</body>
+</html>
