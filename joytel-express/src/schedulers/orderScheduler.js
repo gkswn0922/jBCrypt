@@ -194,8 +194,8 @@ export class OrderScheduler {
           continue;
         }
         
-        if(!orderInfo.productName || (!orderInfo.productName.includes('베트남') && !orderInfo.productName.includes('일본') && !orderInfo.productName.includes('중국') && !orderInfo.productName.includes('말레이시아')&& !orderInfo.productName.includes('필리핀') && !orderInfo.productName.includes('인도네시아') && !orderInfo.productName.includes('싱가폴') && !orderInfo.productName.includes('홍마') && !orderInfo.productName.includes('미국'))) {
-          console.log(`베트남 또는 일본 상품이 아닌 주문 건너뛰기: productOrderId=${orderInfo.productOrderId}, orderId=${orderInfo.orderId}, ordererName=${orderInfo.ordererName}, productName=${orderInfo.productName}`);
+        if(!orderInfo.productName || (!orderInfo.productName.includes('베트남') && !orderInfo.productName.includes('일본') && !orderInfo.productName.includes('중국') && !orderInfo.productName.includes('말레이시아')&& !orderInfo.productName.includes('필리핀') && !orderInfo.productName.includes('인도네시아') && !orderInfo.productName.includes('싱가폴') && !orderInfo.productName.includes('홍마') && !orderInfo.productName.includes('미국') && !orderInfo.productName.includes('태국') && !orderInfo.productName.includes('대만') && !orderInfo.productName.includes('터키') && !orderInfo.productName.includes('호뉴'))) {
+            console.log(`베트남 또는 일본 상품이 아닌 주문 건너뛰기: productOrderId=${orderInfo.productOrderId}, orderId=${orderInfo.orderId}, ordererName=${orderInfo.ordererName}, productName=${orderInfo.productName}`);
           continue;
         }
 

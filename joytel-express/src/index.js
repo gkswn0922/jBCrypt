@@ -73,11 +73,15 @@ const countryMapping = {
   '인도네시아': 'INDONESIA',
   '싱가폴': 'SINGAPORE',
   '홍마': 'HONGKONG',
-  '미국': 'USA'
+  '미국': 'USA',
+  '터키': 'TURKEY',
+  '대만': 'TAIWAN',
+  '태국': 'THAILAND',
+  '호뉴': 'AUSTRALIA'
 };
 
 // 어두운 배경을 가진 나라들 (로고와 국가명을 하얀색으로 변경)
-const darkBackgroundCountries = ['HONGKONG', 'CHINA','PHILIPPINES', 'INDONESIA'];
+const darkBackgroundCountries = ['HONGKONG', 'CHINA','PHILIPPINES', 'INDONESIA', 'TAIWAN', 'THAILAND'];
 
 // 나라별 이모지 매핑
 const countryEmojiMapping = {
@@ -89,7 +93,11 @@ const countryEmojiMapping = {
   'INDONESIA': '../assets/ID.png',
   'SINGAPORE': '../assets/SP.png',
   'HONGKONG': '../assets/HK.png',
-  'USA': '../assets/US.png'
+  'USA': '../assets/US.png',
+  'TURKEY': '../assets/TR.png',
+  'TAIWAN': '../assets/TW.png',
+  'THAILAND': '../assets/TH.png',
+  'AUSTRALIA': '../assets/AU.png'
 };
 
 // 나라명 추출 및 영문명 변환 함수
@@ -622,11 +630,7 @@ async function renderEsimDetailPage(esimData) {
             console.log(usageData)
             
             if (usageData && usageData.code === '000' && usageData.data) {
-              // 가장 최근 사용량 가져오기
-              const sortedUsage = usageData.data.dataUsageList.sort((a, b) => b.usageDate.localeCompare(a.usageDate));
               const totalUsage = usageData.data.totalUsage;
-              const latestUsage = sortedUsage[0];
-              //const usedBytes = parseInt(latestUsage.usage);
               
               // 상품명에서 데이터 용량 추출 (기가바이트)
               function extractDataCapacity(productName) {
@@ -649,32 +653,41 @@ async function renderEsimDetailPage(esimData) {
               
               const totalCapacityGB = extractDataCapacity(productName);
               const totalCapacityBytes = totalCapacityGB * 1024 * 1024 * 1024;
-              const usedGB = usedBytes / (1024 * 1024 * 1024);
-              const remainingGB = totalCapacityGB - usedGB;
-              const usagePercentage = Math.min((usedBytes / totalCapacityBytes) * 100, 100);
               
-              // 상품명에 "매일"이 있으면 기존 로직, "총"이 있으면 totalUsage를 usedBytes로 설정
               let displayUsedGB, displayRemainingGB, displayPercentage;
               
               if (productName.includes('매일')) {
-                // 매일 상품: 기존 로직 (일일 사용량 기준)
-                displayUsedGB = usedGB;
-                displayRemainingGB = remainingGB;
-                displayPercentage = usagePercentage;
-                } else if (productName.includes('총')) {
-                  // 총 상품: 누적 사용량을 그대로 표시
-                  displayUsedGB = totalUsage / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
-                  displayRemainingGB = (totalCapacityBytes - totalUsage) / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
-                  displayPercentage = Math.min((totalUsage / totalCapacityBytes) * 100, 100);
+                // 매일 상품: totalUsage를 직접 사용 (dataUsageList가 없을 수 있음)
+                displayUsedGB = totalUsage / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
+                displayRemainingGB = (totalCapacityBytes - totalUsage) / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
+                displayPercentage = Math.min((totalUsage / totalCapacityBytes) * 100, 100);
+              } else if (productName.includes('총')) {
+                // 총 상품: 누적 사용량을 그대로 표시
+                displayUsedGB = totalUsage / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
+                displayRemainingGB = (totalCapacityBytes - totalUsage) / (1024 * 1024 * 1024); // 바이트를 기가바이트로 변환
+                displayPercentage = Math.min((totalUsage / totalCapacityBytes) * 100, 100);
               } else {
-                // 기본: 기존 로직
-                displayUsedGB = usedGB;
-                displayRemainingGB = remainingGB;
-                displayPercentage = usagePercentage;
+                // 기본: dataUsageList가 있는 경우 최신 사용량 사용, 없으면 totalUsage 사용
+                if (usageData.data.dataUsageList && usageData.data.dataUsageList.length > 0) {
+                  const sortedUsage = usageData.data.dataUsageList.sort((a, b) => b.usageDate.localeCompare(a.usageDate));
+                  const latestUsage = sortedUsage[0];
+                  const usedBytes = parseInt(latestUsage.usage);
+                  const usedGB = usedBytes / (1024 * 1024 * 1024);
+                  const remainingGB = totalCapacityGB - usedGB;
+                  const usagePercentage = Math.min((usedBytes / totalCapacityBytes) * 100, 100);
+                  
+                  displayUsedGB = usedGB;
+                  displayRemainingGB = remainingGB;
+                  displayPercentage = usagePercentage;
+                } else {
+                  // dataUsageList가 없는 경우 totalUsage 사용
+                  displayUsedGB = totalUsage / (1024 * 1024 * 1024);
+                  displayRemainingGB = (totalCapacityBytes - totalUsage) / (1024 * 1024 * 1024);
+                  displayPercentage = Math.min((totalUsage / totalCapacityBytes) * 100, 100);
+                }
               }
               
               // UI 업데이트
-              
               const remainingDataElement = document.getElementById('remainingData');
               const progressFillElement = document.getElementById('progressFill');
               const progressTextElement = document.getElementById('progressText');
@@ -945,7 +958,7 @@ app.get("/api/admin/orders", requireAuth, async (req, res) => {
       SELECT 
         productOrderId, orderId, ordererName, ordererTel, email, 
         productName, day, quantity, snCode, QR, orderTid, kakaoSendYN, 
-        created_at, updated_at
+        created_at, updated_at, snPin
       FROM user 
       ORDER BY created_at DESC
       LIMIT 1000
@@ -953,13 +966,14 @@ app.get("/api/admin/orders", requireAuth, async (req, res) => {
     
     const [orders] = await mysqlClient.connection.execute(ordersQuery);
     
-    // 통계 정보 계산
+    // 통계 정보 계산 (한국시간 기준)
     const statsQuery = `
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN QR IS NOT NULL AND QR != '' THEN 1 ELSE 0 END) as sent,
         SUM(CASE WHEN QR IS NULL OR QR = '' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) as today
+        SUM(CASE WHEN DATE(CONVERT_TZ(created_at, '+00:00', '+09:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00')) THEN 1 ELSE 0 END) as today,
+        SUM(CASE WHEN DATE(CONVERT_TZ(created_at, '+00:00', '+09:00')) = DATE(CONVERT_TZ(NOW(), '+00:00', '+09:00')) THEN COALESCE(CAST(cost AS UNSIGNED), 0) ELSE 0 END) as todayRevenue
       FROM user
     `;
     
@@ -972,7 +986,8 @@ app.get("/api/admin/orders", requireAuth, async (req, res) => {
         total: parseInt(stats.total),
         sent: parseInt(stats.sent),
         pending: parseInt(stats.pending),
-        today: parseInt(stats.today)
+        today: parseInt(stats.today),
+        todayRevenue: parseInt(stats.todayRevenue) || 0
       },
       timestamp: new Date().toISOString()
     });
@@ -981,6 +996,157 @@ app.get("/api/admin/orders", requireAuth, async (req, res) => {
     console.error('관리자 대시보드 데이터 조회 실패:', error);
     res.status(500).json({ 
       error: '데이터를 불러오는데 실패했습니다.',
+      message: error.message 
+    });
+  } finally {
+    await mysqlClient.disconnect();
+  }
+});
+
+// eSIM URL 조회 API
+app.get("/api/admin/esim-urls/:productOrderId", requireAuth, async (req, res) => {
+  try {
+    await mysqlClient.connect();
+    
+    const { productOrderId } = req.params;
+    
+    // user 테이블에서 snPin 조회
+    const userQuery = `SELECT snPin FROM user WHERE productOrderId = ?`;
+    const [userRows] = await mysqlClient.connection.execute(userQuery, [productOrderId]);
+    
+    if (userRows.length === 0) {
+      return res.json({ urls: [] });
+    }
+    
+    const snPinString = userRows[0].snPin;
+    if (!snPinString) {
+      return res.json({ urls: [] });
+    }
+    
+    // snPin을 |로 분리
+    const snPins = snPinString.split('|').map(pin => pin.trim()).filter(pin => pin);
+    
+    // 각 snPin에 대해 transId 조회
+    const urls = [];
+    for (const snPin of snPins) {
+      const transIdQuery = `SELECT transId FROM esim_progress_notifications WHERE snPin = ?`;
+      const [transIdRows] = await mysqlClient.connection.execute(transIdQuery, [snPin]);
+      
+      if (transIdRows.length > 0) {
+        urls.push({
+          snPin: snPin,
+          transId: transIdRows[0].transId,
+          url: `https://ringtalk.shop/esim/qr-detail?transId=${transIdRows[0].transId}`
+        });
+      }
+    }
+    
+    res.json({ urls });
+    
+  } catch (error) {
+    console.error('eSIM URL 조회 실패:', error);
+    res.json({ urls: [] });
+  } finally {
+    await mysqlClient.disconnect();
+  }
+});
+
+// 수동 발송 API
+app.post("/api/admin/manual-dispatch", requireAuth, async (req, res) => {
+  try {
+    const { name, tel, product, days, quantity } = req.body;
+    
+    // 필수 필드 검증
+    if (!name || !tel || !product || !days || !quantity) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '모든 필드를 입력해주세요.' 
+      });
+    }
+    
+    await mysqlClient.connect();
+    
+    // 수동 발송 데이터 삽입
+    const insertQuery = `
+      INSERT INTO user (
+        productOrderId, orderId, ordererName, ordererTel, email, 
+        productName, day, quantity, snPin, QR, created_at, kakaoSendYN, dispatchStatus
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'N', 0)
+    `;
+    
+    // 중복되지 않는 productOrderId 생성 (현재 시간 기반)
+    const timestamp = Date.now();
+    const uniqueProductOrderId = `manual_${timestamp}`;
+    
+    const [result] = await mysqlClient.connection.execute(insertQuery, [
+      uniqueProductOrderId, // productOrderId
+      'manual', // orderId
+      name,     // ordererName
+      tel,      // ordererTel
+      'example@example.com', // email
+      product,  // productName
+      days,     // day
+      quantity, // quantity
+      null,     // snPin
+      null      // QR
+    ]);
+    
+    console.log(`수동 발송 데이터 저장 완료: ID=${result.insertId}`);
+    
+    res.json({
+      success: true,
+      message: '수동 발송 데이터가 성공적으로 저장되었습니다.',
+      insertId: result.insertId
+    });
+    
+  } catch (error) {
+    console.error('수동 발송 데이터 저장 실패:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '수동 발송 데이터 저장에 실패했습니다.',
+      error: error.message 
+    });
+  } finally {
+    await mysqlClient.disconnect();
+  }
+});
+
+// 일별 매출 조회 API
+app.get("/api/admin/daily-revenue", requireAuth, async (req, res) => {
+  try {
+    await mysqlClient.connect();
+    
+    const { startDate, endDate } = req.query;
+    
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: '시작일과 종료일이 필요합니다.' });
+    }
+    
+    // 일별 매출 조회 쿼리 (한국시간 기준)
+    const dailyRevenueQuery = `
+      SELECT 
+        DATE(CONVERT_TZ(created_at, '+00:00', '+09:00')) as date,
+        COUNT(*) as orderCount,
+        SUM(COALESCE(CAST(cost AS UNSIGNED), 0)) as dailyRevenue
+      FROM user 
+      WHERE DATE(CONVERT_TZ(created_at, '+00:00', '+09:00')) BETWEEN ? AND ?
+      GROUP BY DATE(CONVERT_TZ(created_at, '+00:00', '+09:00'))
+      ORDER BY date DESC
+    `;
+    
+    const [dailyRevenueRows] = await mysqlClient.connection.execute(dailyRevenueQuery, [startDate, endDate]);
+    
+    res.json({
+      dailyRevenue: dailyRevenueRows,
+      startDate,
+      endDate,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('일별 매출 조회 실패:', error);
+    res.status(500).json({ 
+      error: '일별 매출 데이터를 불러오는데 실패했습니다.',
       message: error.message 
     });
   } finally {
@@ -1194,8 +1360,9 @@ app.get("/", requireAuth, (req, res) => {
                 <p>eSIM 주문 및 알림톡 전송 현황</p>
             </div>
             <div class="header-actions">
+                <button class="manual-dispatch-btn" id="manualDispatchBtn">📦 수동 발송</button>
                 <span class="user-info" id="userInfo">관리자</span>
-                <button class="logout-btn" onclick="logout()">로그아웃</button>
+                <button class="logout-btn" id="logoutBtn">로그아웃</button>
             </div>
         </div>
     </div>
@@ -1222,11 +1389,16 @@ app.get("/", requireAuth, (req, res) => {
                 <div class="number" id="todayOrders">-</div>
                 <small>당일 신규 주문</small>
             </div>
+            <div class="stat-card revenue" id="revenueCard">
+                <h3>오늘 매출</h3>
+                <div class="number" id="todayRevenue">-</div>
+                <small>당일 총 매출액 (클릭하여 일별 매출 확인)</small>
+            </div>
         </div>
         
         <div class="controls">
-            <button class="refresh-btn" onclick="loadData()">🔄 새로고침</button>
-            <input type="text" class="search-box" id="searchBox" placeholder="주문번호, 고객명, 전화번호로 검색..." onkeyup="filterTable()">
+            <button class="refresh-btn" id="refreshBtn">🔄 새로고침</button>
+            <input type="text" class="search-box" id="searchBox" placeholder="주문번호, 고객명, 전화번호로 검색...">
             <div class="last-updated" id="lastUpdated"></div>
         </div>
         
@@ -1241,7 +1413,7 @@ app.get("/", requireAuth, (req, res) => {
                             <th>주문번호</th>
                             <th>고객명</th>
                             <th>전화번호</th>
-                            <th>이메일</th>
+                            <th>eSIM URL</th>
                             <th>상품명</th>
                             <th>일수</th>
                             <th>수량</th>
@@ -1257,6 +1429,84 @@ app.get("/", requireAuth, (req, res) => {
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 수동 발송 모달 -->
+    <div id="manualDispatchModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📦 수동 발송</h2>
+                <span class="close" id="closeManualDispatchModal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="manualDispatchForm">
+                    <div class="form-group">
+                        <label for="manualName">이름 *</label>
+                        <input type="text" id="manualName" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualTel">전화번호 *</label>
+                        <input type="tel" id="manualTel" name="tel" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualProduct">상품명 *</label>
+                        <input type="text" id="manualProduct" name="product" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualDays">일수 *</label>
+                        <input type="number" id="manualDays" name="days" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualQuantity">수량 *</label>
+                        <input type="number" id="manualQuantity" name="quantity" min="1" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="cancel-btn" id="cancelManualDispatch">취소</button>
+                        <button type="submit" class="submit-btn" id="submitManualDispatch">전송</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 일별 매출 모달 -->
+    <div id="dailyRevenueModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📈 일별 매출 현황</h2>
+                <span class="close" id="closeModal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="date-range-selector">
+                    <div class="date-input-group">
+                        <label for="startDate">시작일:</label>
+                        <input type="date" id="startDate" name="startDate">
+                    </div>
+                    <div class="date-input-group">
+                        <label for="endDate">종료일:</label>
+                        <input type="date" id="endDate" name="endDate">
+                    </div>
+                    <button class="search-btn" id="searchRevenueBtn">조회</button>
+                </div>
+                
+                <div class="revenue-summary" id="revenueSummary" style="display: none;">
+                    <div class="summary-card">
+                        <h3>조회 기간 총 매출</h3>
+                        <div class="summary-amount" id="totalRevenueAmount">-</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>총 주문 건수</h3>
+                        <div class="summary-count" id="totalOrderCount">-</div>
+                    </div>
+                </div>
+                
+                <div class="revenue-chart" id="revenueChart">
+                    <div class="chart-placeholder">
+                        날짜를 선택하고 조회 버튼을 클릭하세요
+                    </div>
+                </div>
             </div>
         </div>
     </div>
